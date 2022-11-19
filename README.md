@@ -1,5 +1,5 @@
 # py-holmes
-Adaptation of the causal testing tool [Holmes](https://cs.gmu.edu/~johnsonb/docs/Johnson20icse.pdf) for Python unit testing, including testing of machine learning projects.  Submitted as an artifact along with our paper *Py-holmes: Causal Testing for Python*.
+Adaptation of the causal testing tool [Holmes](https://cs.gmu.edu/~johnsonb/docs/Johnson20icse.pdf) for Python unit testing.  Submitted as an artifact along with our paper *Py-holmes: Causal Testing for Python*.
 
 It is not possible to run multiple runtimes of py-holmes in parallel, because of the way it writes and reads temporary files.
 
