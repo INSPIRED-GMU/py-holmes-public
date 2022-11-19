@@ -1,0 +1,7 @@
+hypothesis
+black
+pytest
+astor
+python-Levenshtein
+pylint
+colorama
