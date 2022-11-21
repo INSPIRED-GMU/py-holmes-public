@@ -11,7 +11,7 @@ Py-holmes has certain requirements for the format of your project.  They are as 
 2. All unit test files must either begin or end with the word "test", and no other files in the project may begin this way.
 3. No file should import more than one module on the same line.  For example, `import math, random` is not acceptable, but `from math import sin, cos` is.  This standard is also imposed by [PEP 8](https://peps.python.org/pep-0008/#imports).
 4. No file should use relative imports; [PEP 8](https://peps.python.org/pep-0008/#imports) imposes this standard as well.  In addition, py-holmes does not permit explicit relative imports.  Only absolute imports are permitted.
-5. Py-holmes requires the user to communicate which arguments in `unittest.TestCase.assert*()` calls are oracles, by using py-holmes's convention for oracle positions discussed in our paper.
+5. Py-holmes requires the user to communicate which arguments in `unittest.TestCase.assert*()` calls are oracles, by using py-holmes's convention for oracle positions discussed later in this readme.
 6. Your uppermost project folder should not contain or be contained by the default Python install folder for your operating system.  Your uppermost project folder may contain the folder of the Python executable you're using, but your project folder must not be contained by it.
 7. Your project should not contain any files with the following name: `test_outputs_fuzzed.py`
 
@@ -69,7 +69,7 @@ Py-holmes runs each requested test as-is and records its entire execution path. 
 
 Py-holmes finds all tests in the project that are both *scope-similar* and *call-similar* to the original test.  We define scope-similarity as using a nonempty subset of the same user-written files, functions, and classes, and call-similarity as making function calls in exactly the same order (ignoring the arguments of those functions).
 
-Py-holmes then produces fuzzed variants of the original test, as well as all tests that are both scope-similar and call-similar.  Fuzzing is performed by identifying all literals in a test which are not involved in defining an oracle argument of a `unittest.TestCase.assert*()` call, where `*` is a wildcard.  Literals are identified by parsing a unit test's body as an abstract syntax tree using Python's built-in `ast` module.  Any literals that are used as oracles, or involved in determining the value of an oracle, are skipped over, to protect them from fuzzing.  This process of identifying literals to protect is discussed further in our paper.  By default, a total of 50 fuzzed variant tests are produced.  If any tests are being fuzzed other than the original test, then roughly half of the fuzzed tests will be variants of the original test, and the remaining tests will be variants of the other tests, in as uniform a distribution across them as possible.  Each fuzzed variant of the original test has only one literal fuzzed, so that if a variant passes, the reason will be easier for the user to interpret.  Fuzzed variants of other tests have all their non-oracle literals fuzzed.
+Py-holmes then produces fuzzed variants of the original test, as well as all tests that are both scope-similar and call-similar.  Fuzzing is performed by identifying all literals in a test which are not involved in defining an oracle argument of a `unittest.TestCase.assert*()` call, where `*` is a wildcard.  Literals are identified by parsing a unit test's body as an abstract syntax tree using Python's built-in `ast` module.  Any literals that are used as oracles, or involved in determining the value of an oracle, are skipped over, to protect them from fuzzing.  This process of identifying literals to protect is discussed later in this readme.  By default, a total of 50 fuzzed variant tests are produced.  If any tests are being fuzzed other than the original test, then roughly half of the fuzzed tests will be variants of the original test, and the remaining tests will be variants of the other tests, in as uniform a distribution across them as possible.  Each fuzzed variant of the original test has only one literal fuzzed, so that if a variant passes, the reason will be easier for the user to interpret.  Fuzzed variants of other tests have all their non-oracle literals fuzzed.
 
 How a particular literal is fuzzed depends on its data type.
 - If the literal is **boolean**, it has a 50% chance to have its value flipped.
@@ -95,6 +95,19 @@ The figure below shows an example of a report that py-holmes might output for a 
 
 ![ExampleReport](ph_readme_images/example-report-snippet-cropped-more.png)
 
+## Identifying oracles to protect them from fuzzing
+To avoid changing test oracles, we categorized `unittest.TestCase.assert*()` methods provided by `unittest` based on oracle argument placement. As long as the user conforms to this convention, no oracles or values that contribute to oracles are fuzzed.
+We organize all of these functions into the following four "classes":
+
+![AssertClasses](ph_readme_images/assert-classes-1d.png)
+
+For **class 1 asserts**, the first argument is assumed to be the oracle.  Certain methods in this group *could* be written with the oracle in a different position, but we impose this [constraint from JUnit](https://web.archive.org/web/20221109221026/https://sourceforge.net/p/junit/mailman/message/3338997/) to avoid ambiguity.
+
+For **class 2 asserts**, the oracle argument could be either the first or second argument, and the other must be a non-oracle.  To clear this ambiguity, we rely on the assumption that the oracle will involve fewer variables in its definition, because it is an invariant.  Therefore whichever positional argument contains the fewest variable names is considered the oracle.  If both arguments are tied for fewest variables, py-holmes asks the user to manually indicate which is the oracle.
+
+For **class 3 asserts**, all arguments are considered to be oracles.  This is because these methods are called using the Python context manager word `with`, and the content being tested is within that block, rather than as an argument of the assert method itself.
+
+For **class 4 asserts**, no arguments are considered to be oracles.  This is because the oracle is usually simply in the name of the assert method.  For a minority of these methods, there is technically an oracle argument, but it is neither composed of literals nor determined by literals in any probable test procedure, and therefore does not require protection from fuzzing.
 
 # Purpose of each folder
 The purposes of this project's subdirectories are as follows:
