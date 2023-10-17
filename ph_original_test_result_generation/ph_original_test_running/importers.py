@@ -1,13 +1,15 @@
 """Classes and functions for importing modules and packages."""
 
 
-from importlib import import_module
+from importlib import import_module, reload
 from ph_basic_processing.parsers import concatenate_list_to_string
 
 
-def import_by_string(path: str):
+def import_by_string(path: str, should_reload=False):
     """Given a path string, import the module or class, and return it.
     References this StackOverflow thread: https://stackoverflow.com/questions/547829/how-to-dynamically-load-a-python-class
+    :param path:            the path string
+    :param should_reload:   whether to reload the module before returning it.  Use this if the module's file(s) have been changed since last importing it this runtime.
     """
     # Handle errors
     # path not a string
@@ -38,8 +40,12 @@ def import_by_string(path: str):
     if "." in path:     # path contains more than one component; this is a more complicated import
         components = path.split(".")
         mod = import_module(concatenate_list_to_string(components[0:-1], "."))  # Get the module represented by path sans whatever follows the final period
+        if should_reload:
+            reload(mod)
         mod = getattr(mod, components[-1])  # Import whatever follows the final period using what came before
         return mod
     else:   # path contains only one component; this is a simpler import
         mod = __import__(path)
+        if should_reload:
+            reload(mod)
         return mod

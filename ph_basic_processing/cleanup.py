@@ -15,6 +15,6 @@ ROOT_DIR = shared_variables.ROOT_DIR
 def cleanup() -> None:
     """Remove key files that, if left over, may interfere with the flow of py-holmes."""
     for root, dirs, files in os.walk(ROOT_DIR):
-        for this_file in ["test_outputs_fuzzed.py", "pylint_result.txt"]:
+        for this_file in ["test_outputs_fuzzed.py", "pylint_result.txt", "ph_test_hooked.py", "ph_activations.pickle"]:
             if this_file in files:
                 os.remove(os.path.join(root, this_file))

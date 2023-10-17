@@ -30,6 +30,10 @@ def run_causal_testing(original_test_result: OriginalUnitTestResult, use_dev_onl
     if not isinstance(manual_fuzzing_characters, bool):
         raise TypeError("manual_fuzzing_characters must be a bool")
 
+    # Determine whether we're running in dl mode.
+    shared_variables.initialize()
+    dl = shared_variables.dl
+
     # Start with a print to say which test method is being subjected to causal testing
     tested_class = original_test_result.test_class_string
     tested_method = original_test_result.test_method_string
@@ -41,27 +45,45 @@ def run_causal_testing(original_test_result: OriginalUnitTestResult, use_dev_onl
         print("INPUT ARGS TREE:\n" + str(original_test_result.input_args_tree))
         print("FAILED:\n" + str(original_test_result.failed))
         print("TRACEBACK:\n" + str(original_test_result.traceback))
+        if dl:
+            print("ACTIVATIONS:\n" + str(original_test_result.activations))
 
     # Run causal testing
     # Create a TestMethod object for the original test and post it to shared_variables.py
-    shared_variables.initialize()
     original_test_file_absolute_path = shared_variables.file_absolute
     original_test_method_definition_line = shared_variables.definition_line
     original_test = TestMethod(origin="found", test_filepath=original_test_file_absolute_path, starting_test_lineno=original_test_method_definition_line, is_fuzzed=False, is_original=True)
     shared_variables.initialize_original_test_method_object(original_test)
 
-    # Find the set of existing tests in the user's project that test the same file/class
+    # Find scope-similar tests
     # TODO: Might be able to skip this step and use cut_found_tests to find the similar-enough tests to begin with
-    found_similar_tests = find_tests_of_same_files_methods_and_classes(original_test, use_dev_only_test_mode)
+    if dl:
+        # For dl, we don't look for scope-similar tests.
+        pass
+    else:
+        # Find the set of existing tests in the user's project that test the same file/class
+        found_similar_tests = find_tests_of_same_files_methods_and_classes(original_test, use_dev_only_test_mode)
 
     # Cut found similar tests that aren't call-similar
-    found_similar_tests = list(found_similar_tests)
-    found_similar_tests = cut_found_tests(found_similar_tests, original_test, use_dev_only_test_mode)
+    if dl:
+        # For dl, we don't look for call-similar tests.
+        pass
+    else:
+        found_similar_tests = list(found_similar_tests)
+        found_similar_tests = cut_found_tests(found_similar_tests, original_test, use_dev_only_test_mode)
 
-    # Fuzz tests that survived the cut, as well as the original test
+    # Fuzzing
     num_test_variants = shared_variables.num_test_variants
-    tests_to_fuzz = [original_test] + found_similar_tests
-    fuzzed_from_original, fuzzed_from_found = fuzz_tests(tests_to_fuzz, original_test_file_absolute_path, use_dev_only_test_mode, manual_fuzzing_characters, num_tests=num_test_variants)
+    if dl:
+        # For dl, write a version of the user's test file that produces variants of their input and concludes by printing results when those inputs are tested
+        tests_to_fuzz = [original_test]
+        fuzz_tests(tests_to_fuzz, original_test_file_absolute_path, use_dev_only_test_mode, False, num_tests=num_test_variants)
+        fuzzed_from_original = None
+        fuzzed_from_found = None
+    else:
+        # Fuzz tests that survived the cut, as well as the original test
+        tests_to_fuzz = [original_test] + found_similar_tests
+        fuzzed_from_original, fuzzed_from_found = fuzz_tests(tests_to_fuzz, original_test_file_absolute_path, use_dev_only_test_mode, manual_fuzzing_characters, num_tests=num_test_variants)
 
     # Run some of the fuzzed tests and show results
     run_variants_and_show_results(original_test_result, original_test, fuzzed_from_original, fuzzed_from_found, use_dev_only_test_mode)

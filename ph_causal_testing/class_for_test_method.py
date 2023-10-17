@@ -2,7 +2,8 @@
 
 
 from ph_variable_sharing import shared_variables
-from ph_basic_processing.parsers import strip_trailing_newline, get_method_name_from_definition_line, find_class_containing_method, leading_spaces_of, is_just_whitespace, get_module_level_only_from_file_content, strip_custom, remove_trailing_comment, get_class_name_from_definition_line, token_appears_in_method, strip_file_extension
+from ph_basic_processing.parsers import get_method_name_from_definition_line, find_class_containing_method, leading_spaces_of, is_just_whitespace, get_module_level_only_from_file_content, remove_trailing_comment, get_class_name_from_definition_line, token_appears_in_method, strip_file_extension, strip_trailing_newline
+from ph_basic_processing.stripping import strip_custom
 
 from _warnings import warn
 from os import path, listdir
@@ -395,7 +396,7 @@ class TestMethod:
             elif platform in ["darwin", "linux"]:
                 this_import_relative_filepath_chunked = this_import_relative_filepath.split("/")
             else:
-                raise RuntimeError("Unfamiliar operating system. Don't know the default folder separation character (eg /, \\)for this OS")
+                raise RuntimeError("Unfamiliar operating system. Don't know the default folder separation character (eg /, \\)for this OS.  Try using Linux, macOS, or Windows instead.")
             if this_import_relative_filepath_chunked == [""]:   # Cleanup from some strangeness of how split() on an empty string works
                 this_import_relative_filepath_chunked = []
             for ii in range(len(this_import_relative_filepath_chunked)-1, -1, -1):

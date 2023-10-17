@@ -1,0 +1,3 @@
+modeldate2023-03-01,01_15_07.141405_bs100_lr0.001_eps1e-08_epochs20.pth: Is a Net() defined in dnn_mnist_0.py, which uses ReLU as the nonlinearity.
+
+modeldate2023-04-22,11_48_48.321528_bs100_lr0.001_eps1e-08_epochs44_valacc0.9818: Is a Net() defined in dnn_mnist_1.py, which uses tanh as the nonlinearity.  Has a test accuracy of 98.15%.

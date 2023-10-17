@@ -43,11 +43,12 @@ def get_lowest_dir_in_fragment(path_fragment: str) -> str:
         return path.dirname(path_fragment)
 
 
-def initialize(file_in=None, lines_in=None, definition_line_in=None, tatosp_in=None, dev_only_test_mode_in=None, still_run_causal_testing_on_passing_tests_in=None, test_method_in=None, user_test_method_objects_in=None, variant_testing_time_limit_seconds_in=None, user_help_skip_in=None, num_test_variants_in=None) -> None:
+def initialize(file_in=None, lines_in=None, definition_line_in=None, tatosp_in=None, dev_only_test_mode_in=None, still_run_causal_testing_on_passing_tests_in=None, test_method_in=None, user_test_method_objects_in=None, variant_testing_time_limit_seconds_in=None, user_help_skip_in=None, num_test_variants_in=None, dl_in=None, seed_in="not_given", execution_path_suppress_in=None) -> None:
     """Set variables to be shared, or access those variables.
     For file_in, lines_in, tatosp_in, dev_only_test_mode_in, still_run_causal_testing_on_passing_tests_in, and
     test_method_in, calling initialize() without specifying an argument for that variable will leave that variable
     unchanged.
+    The default value for seed_in is "not_given", rather than None, because None is a valid non-seed.
     file_in:    The name of the user's unit test file, ending with ".py".  Not an absolute filepath.
     tatosp_in:     How many spaces a tab is worth in the user's files
     definition_line_in:    The line on which the definition for the original test method appears, starting counting at 1
@@ -100,10 +101,19 @@ def initialize(file_in=None, lines_in=None, definition_line_in=None, tatosp_in=N
     if num_test_variants_in is not None:
         global num_test_variants
         num_test_variants = num_test_variants_in
+    if dl_in is not None:
+        global dl
+        dl = dl_in
+    if seed_in != "not_given":
+        global seed
+        seed = seed_in
+    if execution_path_suppress_in is not None:
+        global execution_path_suppress
+        execution_path_suppress = execution_path_suppress_in
 
-    # .json filename for original unit test running AND fuzzed unit test running
-    global json_filename
-    json_filename = "created_by_py_holmes_unittest_relevant_results.json"
+    # .pickle filename for original unit test running AND fuzzed unit test running
+    global pickle_filename
+    pickle_filename = "created_by_py_holmes_unittest_relevant_results.pickle"
 
 
 def initialize_all_dirs_to_search() -> None:
@@ -132,19 +142,6 @@ def initialize_original_test_method_object(original_test_in=None) -> None:
     if original_test_in is not None:
         global original_test
         original_test = original_test_in
-
-
-def initialize_generated_test_file(generated_file_name_in=None, generated_file_path_in=None) -> None:
-    """Share the name and filepath of the file containing generated tests.
-    :param generated_file_name_in:    the name of the file (no path), including file extension
-    :param generated_file_path_in:    the absolute path of the file, including file extension
-    """
-    if generated_file_name_in is not None:
-        global generated_file_name
-        generated_file_name = generated_file_name_in
-    if generated_file_path_in is not None:
-        global generated_file_path
-        generated_file_path = generated_file_path_in
 
 
 def initialize_fuzzed_test_file(fuzzed_file_name_in=None, fuzzed_file_path_in=None) -> None:

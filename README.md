@@ -1,23 +1,31 @@
 # py-holmes
-Adaptation of the causal testing tool [Holmes](https://cs.gmu.edu/~johnsonb/docs/Johnson20icse.pdf) for Python unit testing.  Submitted as an artifact along with our paper *Py-holmes: Causal Testing for Python*.
+Adaptation of the causal testing tool [Holmes](https://cs.gmu.edu/~johnsonb/docs/Johnson20icse.pdf) for Python unit testing, and extends it for use in testing deep neural networks (DNNs).  Submitted as an artifact along with our paper *Py-holmes: Causal Testing for Deep Neural Networks in Python*.  You can also take a look at our [demo video](https://youtu.be/wFAVWMWrbLo).
 
 It is not possible to run multiple runtimes of py-holmes in parallel, because of the way it writes and reads temporary files.
 
 
 # Installation
+## System requirements
+Using py-holmes on non-deep-learning tests has been successfully tested on Windows and Ubuntu Linux.  py-holmes is not currently compatible with macOS.
+
+If using py-holmes on deep learning tests, Windows and a CUDA GPU may be required.
+
+## Python version
+This tool is designed for Python 3.8.
+
 ## Format of your project
-Py-holmes has certain requirements for the format of your project.  They are as follows:
-1. No user-written function may have its definition line span more than one row in the file.
+If you are using the shallow version of py-holmes, your project must adhere to certain formatting standards.  They are as follows.  If you are only using the deep learning capability of py-holmes, you may ignore these formatting standards.
+1. No functions written by you (the user) may have its definition line span more than one row in the file.
 2. All unit test files must either begin or end with the word "test", and no other files in the project may begin this way.
 3. No file should import more than one module on the same line.  For example, `import math, random` is not acceptable, but `from math import sin, cos` is.  This standard is also imposed by [PEP 8](https://peps.python.org/pep-0008/#imports).
 4. No file should use relative imports; [PEP 8](https://peps.python.org/pep-0008/#imports) imposes this standard as well.  In addition, py-holmes does not permit explicit relative imports.  Only absolute imports are permitted.
 5. Py-holmes requires the user to communicate which arguments in `unittest.TestCase.assert*()` calls are oracles, by using py-holmes's convention for oracle positions discussed later in this readme.
 6. Your uppermost project folder should not contain or be contained by the default Python install folder for your operating system.  Your uppermost project folder may contain the folder of the Python executable you're using, but your project folder must not be contained by it.
-7. Your project should not contain any files with the following name: `test_outputs_fuzzed.py`
+7. Your project should not contain any files with the following names: `test_outputs_fuzzed.py`, `pylint_result.py`, `ph_test_hooked.py`, `ph_activations,pickle`.
 
-The current version of py-holmes is designed for use with the \texttt{unittest} module exclusively, and is therefore not compatible with \texttt{pytest}, another popular unit testing framework for Python.  It also is not completely autonomous, possibly relying on a user to point out which argument is an oracle in certain calls to class 2 assert methods.
+The current version of py-holmes is designed for use with the `unittest` module exclusively, and is therefore not compatible with `pytest`, another popular unit testing framework for Python.  It also is not completely autonomous; when run on certain tests without the `--dl` flag, it may rely on a user to point out which argument is an oracle in certain calls to class 2 assert methods.  If this is not desired, py-holmes can be run with the `--user_help_skip` flag.
 
-The fuzzing process also contains limitations.  Py-holmes cannot fuzz a test that has no literals.  Furthermore, its process of protecting oracle literals from being fuzzed is incomplete.  If the test contains mutator functions which change the value of an oracle variable without using an \texttt{=} operator, then all literal arguments of those mutator functions could play a role in defining the oracle, yet py-holmes will not notice to protect those literals from fuzzing.
+The fuzzing process without the `--dl` flag also contains limitations.  Py-holmes cannot fuzz a test that has no literals.  Furthermore, its process of protecting oracle literals from being fuzzed is incomplete.  If the test contains mutator functions which change the value of an oracle variable without using an `=` operator, then all literal arguments of those mutator functions could play a role in defining the oracle, yet py-holmes will not notice to protect those literals from fuzzing.
 
 ## Directory setup
 Clone this repository to your local machine.  The root directory of this repository should double as the root directory of your project.
@@ -32,25 +40,35 @@ performed without this file but may incur warnings.  Begin a line in .holmesigno
 filepath.  Your test module will automatically be added to .holmesignore if it is not already covered, but failures
 that originate in it will still be caught.
 
-If your project involves any files not found in the project folder, interpreter folder, or default Python install
-location for our OS, it is recommended that you name these files in a .holmessearchextend file (same syntax as a
-.gitignore).  This file should be in the top level of your project folder.  Begin a lines in .holmessearchextend with /
+If you are using py-holmes for non-deep learning code and your project involves any files not found in the project
+folder, interpreter folder, or default Python install location for our OS, it is recommended that you name these files
+in a .holmessearchextend file (same syntax as a .gitignore).  This file should be in the top level of your project
+folder.  Begin a lines in .holmessearchextend with /
 to create an absolute filepath.
 
 ## Dependencies
-The following packages must be installed:
-* pip install hypothesis
-* pip install black
-* pip install -U pytest
-* pip install astor
-* pip install python-Levenshtein
-* pip install pylint
-* pip install colorama
+As a shortcut to dependency installation, you can use our `environment_droplet.yml` file to automatically set up an environment.  Simply enter Anaconda prompt with the `base` environment active, navigate to this folder, and run `conda env create -f environment_droplet.yml`.  This will create a new conda environment called `phdl38`, which you can use to run py-holmes in all its modes and features.
+
+If instead you would like to install an environment manually, here are the required packages:
+* hypothesis
+* black
+* pytest
+* astor
+* python-Levenshtein
+* pylint
+* colorama
+* torch
+* numpy
+
 
 # Usage and internal process
-![PyHolmesFlowchart](ph_readme_images/py-holmes-demo-paper-1-flowchart-1.png)
+> ![Shallow flowchart](ph_readme_images/py-holmes-demo-paper-1-flowchart-1.png)
+> Flowchart of py-holmes's internal process when used on a unit test of shallow software.
 
-Py-holmes's procedure is summarized in the figure above.  A user calls py-holmes using its command line interface.  An example of a typical call is `python py_holmes.py -f tests/my_test.py -l 20 25`.  This command would run py-holmes on two tests contained within the file `tests/my_test.py`: one on line 20, and another on line 25.
+> ![Deep learning flowchart](ph_readme_images/flowchart-dl.jpg)
+> Flowchart of py-holmes's internal process when used on a unit test of a deep neural network.
+
+Py-holmes's procedure is summarized in the figures above.  A user calls py-holmes using its command line interface.  An example of a typical call is `python py_holmes.py -f tests/my_test.py -l 20 25`.  This command would run py-holmes on two tests contained within the file `tests/my_test.py`: one on line 20, and another on line 25.
 
 The full list of CLI options is as follows:
 
@@ -59,13 +77,18 @@ The full list of CLI options is as follows:
 - Optional arguments:
     - `-t`/`--tatosp` is followed by a single integer.  It sets how many spaces a tab is equivalent to, in case any project files indent using a mixture of tabs and spaces.  *However, mixing tabs and spaces is discouraged in Python.*  The default value is 4.
     - `-p`/`--passing_tests_include` is a flag.  Without this argument, py-holmes does not run causal testing on unit tests that pass.
-    - `-c`/`--character_palette_manual` is a flag.  Without this argument, py-holmes infers what characters it can insert into a fuzzed string by observing which of the following groups of characters are represented in the original string: (1) lowercase letters a-z, (2) uppercase letters A-Z, (3) digits 0-9, (4) punctuation in the set {.!?,}, (5) four-function arithmetic symbols in the set {+-/*}, (5) parentheses, (6) square brackets, (7) curly braces, and (8) angle brackets.  We call each of these groups a *character family*.  Including the `-c`/`--character_palette_manual` flag allows the user to give a palette of characters that py-holmes should choose from instead, given as a string of all those characters.  Py-holmes will request this palette later during its runtime, on a string-by-string basis.
+    - `-c`/`--character_palette_manual` is a flag for non-dl use.  Without this argument, py-holmes infers what characters it can insert into a fuzzed string by observing which of the following groups of characters are represented in the original string: (1) lowercase letters a-z, (2) uppercase letters A-Z, (3) digits 0-9, (4) punctuation in the set {.!?,}, (5) four-function arithmetic symbols in the set {+-/*}, (5) parentheses, (6) square brackets, (7) curly braces, and (8) angle brackets.  We call each of these groups a *character family*.  Including the `-c`/`--character_palette_manual` flag allows the user to give a palette of characters that py-holmes should choose from instead, given as a string of all those characters.  Py-holmes will request this palette later during its runtime, on a string-by-string basis.
     - `-n`/`--num_test_variants` is followed by a single integer.  It sets the number of fuzzed test variants py-holmes creates.  The default value is 50.
-    - `-v`/`--variant_testing_time_limit_seconds` is followed by a single integer.  It sets the time limit (in seconds) for py-holmes to run fuzzed variants of the user's unit test.  After this much time has elapsed, no more variant tests will be started.  The default value is 60.
-    - `-u`/`--user_help_skip` is a flag.  If this argument is given, py-holmes will guess arbitrarily when it's unclear which argument to a class 2 assert function is an oracle, rather than asking the user at runtime.
+    - `-v`/`--variant_testing_time_limit_seconds` is followed by a single integer.  It sets the time limit (in seconds) for py-holmes to run fuzzed variants of the user's unit test.  After this much time has elapsed, no more variant tests will be started.  The default value is 60.  **Currently the time limit is ignored if the `--dl` flag is also used.**
+    - `-u`/`--user_help_skip` is a flag for non-dl use.  If this argument is given, py-holmes will guess arbitrarily when it's unclear which argument to a class 2 assert function is an oracle, rather than asking the user at runtime.
     - `-d`/`--dev_only_test_mode` is a flag.  If this argument is given, py-holmes will produce additional readouts to assist with testing and debugging, both in the forms of printed content and generated files.
+    - `-e`/`--execution_path_suppress` is a flag for non-dl use.  If this argument is given, py-holmes will not show the execution paths of variant tests in its report.
+    - `-s`/`--seed` is followed by a single integer.  This argument is for non-dl use.  It seeds py-holmes, which makes its fuzzed tests reproducible.
+    - `--dl` is a flag.  You should use this argument iff you are running this tool on a test of a deep neural network.
 
-Py-holmes runs each requested test as-is and records its entire execution path.  If the test passes, py-holmes skips further action on that test unless the `-p`/`--passing_tests_include` flag was given.  Otherwise, py-holmes runs causal testing on that test (now referred to as the *original test*).  The remainder of this subsection describes how that causal testing is undertaken.
+## Running on non-dl code
+
+For non-dl code (also called *shallow* or *traditional* code), py-holmes runs each requested test as-is and records its entire execution path.  If the test passes, py-holmes skips further action on that test unless the `-p`/`--passing_tests_include` flag was given.  Otherwise, py-holmes runs causal testing on that test (now referred to as the *original test*).  The remainder of this subsection describes how that causal testing is undertaken.
 
 Py-holmes finds all tests in the project that are both *scope-similar* and *call-similar* to the original test.  We define scope-similarity as using a nonempty subset of the same user-written files, functions, and classes, and call-similarity as making function calls in exactly the same order (ignoring the arguments of those functions).
 
@@ -95,7 +118,7 @@ The figure below shows an example of a report that py-holmes might output for a 
 
 ![ExampleReport](ph_readme_images/example-report-snippet-cropped-more.png)
 
-## Identifying oracles to protect them from fuzzing
+### Identifying oracles to protect them from fuzzing
 To avoid changing test oracles, we categorized `unittest.TestCase.assert*()` methods provided by `unittest` based on oracle argument placement. As long as the user conforms to this convention, no oracles or values that contribute to oracles are fuzzed.
 We organize all of these functions into the following four "classes":
 
@@ -108,6 +131,52 @@ For **class 2 asserts**, the oracle argument could be either the first or second
 For **class 3 asserts**, all arguments are considered to be oracles.  This is because these methods are called using the Python context manager word `with`, and the content being tested is within that block, rather than as an argument of the assert method itself.
 
 For **class 4 asserts**, no arguments are considered to be oracles.  This is because the oracle is usually simply in the name of the assert method.  For a minority of these methods, there is technically an oracle argument, but it is neither composed of literals nor determined by literals in any probable test procedure, and therefore does not require protection from fuzzing.
+
+## Running on deep neural networks
+To run py-holmes on a test that involves a deep neural network, use the `--dl` flag.  Your unit test(s) must be formatted in the following way:
+
+- You must instantiate each of the following variables using `<name_of_variable> = `, even if you don't use them in the test yourself:
+  - `model` should the DNN under test.
+  - `loss_fn` should be the loss function you use in training and validation.
+  - `optimizer` should the the optimizer you use in training and validation.
+  - `x` should be the input to your model which you are testing on in this unit test.
+  - `xmin` should be the minimum valid value for an element of any input to your model.
+  - `xmax` should be the maximum valid value for any element of any input to your model.
+  - `label` should be the correct output value produced by your `model` when passed `x` as an input.  `label` should be the desired **immediate** output of the model -- no argmaxing or other postprocessing.
+  - `indices_to_protect_from_fuzzing` should be a list containing the indices of any elements of `x` which you wish to hold constant, protecting them from the fuzzing process.  Each index should be provided as a tuple.
+  - `adjustment_rate` determines how aggressively py-holmes alters `x` to reduce the model's loss.  Tune it for a value that works well for you.  We found that an adjustment rate of 8 worked well on our simple, 2-embedding-layer, fully connected networks on the MNIST digit dataset when input element values range from 0 to 255.  But even on that same task, the adjustment rate should be lower for overtrained models and higher for undertrained models.
+- You must pass only one input (namely `x`) to your `model`.
+- Each element of `x` must be written as a literal in the unit test file.  This is tedious but we're working on producing a way to write such unit test files automatically.
+- You must send `x` to `torch.float32` if it isn't already.
+- Your test must contain exactly one occurrence of a call to a `self.assert*` function, such as `self.assertTrue`.
+- Your test file must use spaces, not tabs, for indentation.
+
+Here is an example of a correctly formatted unit test:
+```python
+import unittest
+from dnn_0 import DnnModel
+import torch
+import torch.nn as nn
+from torch import optim
+
+class TestDnn0WithHandmadeInput(unittest.TestCase):
+    def test_0(self):
+        model = DnnModel()
+        optimizer = optim.Adam(model.parameters(), lr=0.001, eps=1e-8)
+        loss_fn = nn.CrossEntropyLoss()
+        xmin = 0
+        xmax = 255
+        adjustment_rate = 8
+        indices_to_protect_from_fuzzing = [(0, 2)]
+        x = torch.tensor([[0, 1, 2, 3, 4,
+                           5, 6, 7,
+                           8,
+                           9, 10, 11,
+                           12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]], dtype=torch.float32)
+        output = model(x)
+        label = torch.Tensor([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
+        self.assertTrue((label == output).all())
+```
 
 # Purpose of each folder
 The purposes of this project's subdirectories are as follows:

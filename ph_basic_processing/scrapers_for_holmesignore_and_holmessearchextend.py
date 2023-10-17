@@ -2,7 +2,7 @@
 
 
 from os import path
-from ph_basic_processing.parsers import strip_custom
+from ph_basic_processing.stripping import strip_custom
 
 
 #
@@ -33,6 +33,8 @@ def parse_holmesignore():
         "/ph_fault_assessment/*",
         "/ph_log_writing/*",
         "/ph_original_test_result_generation/*",
+        "/ph_models/*",
+        "/ph_readme_images/*",
         #"/ph_traceback_dataset/*",    # Not included; this is used in development but not execution
         #"/circle_method*",            # Not included; these files must be treated as user files for unit testing
         #"/test_empty_unittest_file.py",    # Not included; these files must be treated as user files for unit testing
@@ -40,7 +42,7 @@ def parse_holmesignore():
         "/py_holmes.py",
         #"/test_py_holmes.py",
         "/py_holmes_built_to_fail.py",  # Generated and then deleted in testing
-        "/test_outputs_fuzzed.py"   # Generated during runtime
+        "/test_outputs_fuzzed.py",  # Generated during runtime
     ]
     for this_py_holmes_pattern in all_py_holmes_patterns:
         if path.abspath(ROOT_DIR + this_py_holmes_pattern) + "\n" not in holmesignore_content:

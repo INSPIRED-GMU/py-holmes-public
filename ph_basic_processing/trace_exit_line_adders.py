@@ -4,7 +4,8 @@ The following parameters are assumed when the trace.Trace object is produced:
 """
 
 
-from ph_basic_processing.parsers import leading_spaces_of, strip_custom, get_method_name_from_definition_line, get_class_name_from_definition_line, starts_with_one_of, index_of_last_substring_in_string, begins_with_def_or_class, get_modulename_from_functioncall, get_funcname_from_functioncall, strip_file_extension, is_paren_balanced
+from ph_basic_processing.parsers import leading_spaces_of, get_method_name_from_definition_line, get_class_name_from_definition_line, starts_with_one_of, index_of_last_substring_in_string, begins_with_def_or_class, get_modulename_from_functioncall, get_funcname_from_functioncall, is_paren_balanced, strip_file_extension
+from ph_basic_processing.stripping import strip_custom
 from ph_original_test_result_generation.ph_dir_and_file_finders.pathfinders import FILES_ALREADY_READ, get_absolute_path
 from ph_variable_sharing import shared_variables
 
@@ -196,7 +197,6 @@ def add_exit_lines_to_trace(input_trace: str):
 
     # Convert input to list
     input_trace = input_trace.split("\n")
-    #breakpoint()    # TODO: Remove debugging line
 
     # Create outputs (blank for now)
     output_trace = []
@@ -245,7 +245,6 @@ def add_exit_lines_to_trace(input_trace: str):
                     ll_including_added_lines += 1   # Because we've just added an extra line beyond the default
             # Elif this line is a linelog and the next line is a functioncall, and this line's content starts with "return " (after removing whitespace), add an exit line.
             elif line_parsed.category == "linelog" and next_line_parsed.category == "functioncall" and strip_custom(line_parsed.line_content, ["\t", " "], "head").startswith("return ") and is_paren_balanced(line_parsed.line_content):
-                #if len(function_stack) == 0: breakpoint()    # TODO: Remove debugging line
                 if len(function_stack) > 0: # TODO: Questionable if statement
                     output_trace.append(exit_line(function_stack[-1][1], function_stack[-1][0] + ".py"))
                     ll_including_added_lines += 1  # Because we've just added an extra line beyond the default

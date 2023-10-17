@@ -1,10 +1,12 @@
-"""Classes and functions for examining execution traces to assign blame for failures"""
+"""Classes and functions for examining execution traces to assign blame for failures.  Specifically, is the user at
+fault, or is a separate package they're using (eg numpy) at fault instead?
+"""
 
 
 #
 # HELPER FUNCTIONS
 #
-def user_at_fault(post_processed_trace: str, non_ignored_user_descendant_lines, original_test_module: str, user_and_py_holmes_modules) -> bool:
+def user_at_fault(post_processed_trace: str, non_ignored_user_descendant_lines: list, original_test_module: str, user_and_py_holmes_modules: list) -> bool:
     """Return True if a piece of user code not in .holmesignore is responsible for a failure.
     Else return False.
     post_processed_trace is the full execution trace.
@@ -76,10 +78,11 @@ def user_at_fault(post_processed_trace: str, non_ignored_user_descendant_lines, 
         raise RuntimeError("Reached top of execution trace without finding a user function.  Perhaps failure happened due to a fundamental Python file?")
 
 
-def find_index_of_failing_line(trace_list) -> int:
+def find_index_of_failing_line(trace_list: list) -> int:
     """Given a post-processed execution trace as a list, get the index of the failing line.
-    This line is a *failing* line, not an error line.  It is Python source code, not a user-written line, but it may
-    be the call-descendant of one or more user-written code.
+    This line is a *failing* line (ie causes a unit test to fail), not an error line (which causes a code crash).
+    It is Python source code, not a user-written line, but it may be the call-descendant of one or more user-written
+    code.
     We assume this to be the first line from file case.py with "self._raiseFailure(" or "raise self.failureException("
     in its content.
     trace_list is a list of strings, produced by splitting the post-processed execution trace by newlines.

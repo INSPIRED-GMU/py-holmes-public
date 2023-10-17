@@ -9,8 +9,8 @@ from math import *  # In case the user does.  This is to make node_to_meaningful
 # TODO: We need to import everything the user does, in order to make eval() always work inside node_to_meaningful_name()
 
 from ph_variable_sharing import shared_variables
-from ph_basic_processing.parsers import minimize_indents, concatenate_list_to_string, get_module_level_only_from_file_content, remove_trailing_comment, strip_custom, remove_duplicates_from_list
-
+from ph_basic_processing.parsers import minimize_indents, concatenate_list_to_string, get_module_level_only_from_file_content, remove_trailing_comment, remove_duplicates_from_list
+from ph_basic_processing.stripping import strip_custom
 
 # TODO: Both NodeVisitor.generic_visit() and NodeTransformer.generic_visit() seem like they might miss some nodes.  If I call them on the root node, some Name nodes get missed.  If I call them farther down (ie on an assert argument), will Name nodes still get missed?
 # TODO: If the test contains no literals, warn the user that we can't generate new tests, and have to rely on fuzzes of similar found tests instead

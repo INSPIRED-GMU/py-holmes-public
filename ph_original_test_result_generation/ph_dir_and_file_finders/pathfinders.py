@@ -1,7 +1,8 @@
 """Classes and functions for finding the absolute filepath of a file or directory, given its name."""
 from ph_original_test_result_generation.ph_dir_and_file_finders.default_python_install_for_os_finders import get_python_path_for_platform
 from ph_variable_sharing import shared_variables
-from ph_basic_processing.parsers import strip_custom, matches_an_ignore_pattern
+from ph_basic_processing.parsers import matches_an_ignore_pattern
+from ph_basic_processing.stripping import strip_custom
 
 from os import walk, path
 from sys import executable

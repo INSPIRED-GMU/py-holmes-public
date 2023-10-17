@@ -4,7 +4,7 @@
 from datetime import datetime, timedelta
 import unittest
 import os
-import json
+import pickle
 import trace
 import io
 from io import StringIO
@@ -16,12 +16,15 @@ import importlib
 from ast import parse
 from astor import to_source
 from importlib import import_module
+import torch
 
 from ph_original_test_result_generation.ph_original_test_running.original_test_runners import OriginalUnitTestResult
 from ph_causal_testing.class_for_test_method import TestMethod
 from ph_original_test_result_generation.ph_original_test_running.importers import import_by_string
 from ph_basic_processing.trace_exit_line_adders import add_exit_lines_to_trace, remove_before_function_runtime, remove_after_function_runtime
-from ph_basic_processing.parsers import indices_of_all_occurrences_of_character_in_string, minimize_indents, is_just_whitespace, is_linelog, concatenate_list_to_string, get_folder_delimiter, remove_leading_substring, remove_whitespace_only_lines_from_extremes_of_list
+from ph_basic_processing.parsers import indices_of_all_occurrences_of_character_in_string, minimize_indents, is_just_whitespace, is_linelog, concatenate_list_to_string, get_folder_delimiter, remove_leading_substring, remove_whitespace_only_lines_from_extremes_of_list, count_indentation_in_spaces, get_indices_containing_function_body_and_indentation_of_definition, starts_with_one_of
+from ph_basic_processing.stripping import strip_custom
+from ph_variable_sharing import shared_variables
 
 
 #
@@ -30,18 +33,19 @@ from ph_basic_processing.parsers import indices_of_all_occurrences_of_character_
 class FuzzedUnitTestResult:
     """Container for those results of a fuzzed unit test that are relevant for causal testing."""
 
-    def __init__(self, execution_path: str, failed: bool, test_method: TestMethod) -> None:
+    def __init__(self, execution_path=None, failed=None, test_method=None, activations=None) -> None:
         """
-        :param execution_path:  execution trace in string form.  SHOULD ALREADY BE POSTPROCESSED USING ADD_EXIT_LINES_TO_TRACE().  SHOULD ONLY INCLUDE THE LINES RUN DURING THE TEST'S RUNTIME
+        :param execution_path:  execution trace in string form, unless we're in dl mode, in which case it should be None.  SHOULD ALREADY BE POSTPROCESSED USING ADD_EXIT_LINES_TO_TRACE().  SHOULD ONLY INCLUDE THE LINES RUN DURING THE TEST'S RUNTIME
         :param failed:          boolean.  True if one or more assert calls in the test failed, else False.
         :param test_method:     TestMethod object for this test
+        :param activations:     Only for use when py-holmes is being used with the --dl flag.  Dictionary of tensors representing the activation of each layer.
         """
         # Handle errors
-        # execution_path not a string
-        if not isinstance(execution_path, str):
-            raise TypeError("execution_path must be a string")
-        # execution_path doesn't look like a post-processed execution trace
-        if "\n" not in execution_path or "modulename: " not in execution_path or "---" not in execution_path or "|||" not in execution_path:
+        # execution_path not a string or None
+        if not isinstance(execution_path, str) and execution_path is not None:
+            raise TypeError("execution_path must be a string or None")
+        # execution_path is a string but doesn't look like a post-processed execution trace
+        if isinstance(execution_path, str) and ("\n" not in execution_path or "modulename: " not in execution_path or "---" not in execution_path or "|||" not in execution_path):
             raise ValueError("execution_path doesn't look like a post-processed execution trace")
         # failed not a bool
         if not isinstance(failed, bool):
@@ -49,22 +53,26 @@ class FuzzedUnitTestResult:
         # test_method not a TestMethod object
         if not isinstance(test_method, TestMethod):
             raise TypeError("test_method must be a TestMethod object")
+        # activations not a dict or None
+        if not isinstance(activations, dict) and activations is not None:
+            raise TypeError("activations must be a dict or None")
 
         self.execution_path = execution_path
         self.failed = failed
         self.test_method = test_method
+        self.activations = activations
 
 
 #
 # HELPER FUNCTIONS
 #
-def show_report(failing_results_for_showing: list, passing_results_for_showing: list, original_execution_trace: str, original_test_method: TestMethod) -> None:
+def show_report(failing_results_for_showing: list, passing_results_for_showing: list, original_test_method: TestMethod, original_execution_trace) -> None:
     """Given lists of results to show for both failing and passing tests, print a report in which the differences in
     literals are highlighted, and execution traces are cropped so that only the parts that differ remain.
     :param failing_results_for_showing:         list of failing FuzzedUnitTestResult objects to account for in the report
     :param passing_results_for_showing:         list of passing FuzzedUnitTestResult objects to account for in the report
-    :param original_execution_trace:            string representing the execution trace of the original user-written test
     :param original_test_method:                TestMethod object for the original test
+    :param original_execution_trace:            string representing the execution trace of the original user-written test.
     """
     # Handle errors
     # failing_results_for_showing not a list
@@ -87,6 +95,14 @@ def show_report(failing_results_for_showing: list, passing_results_for_showing: 
     # original_execution_trace not a string
     if not isinstance(original_execution_trace, str):
         raise TypeError("original_execution_trace must be a string")
+    # running in dl mode
+    from ph_variable_sharing import shared_variables
+    shared_variables.initialize()
+    if shared_variables.dl:
+        raise RuntimeError("this function should not be run when py-holmes is in dl mode.  Use run_variants_and_show_results() instead.")
+
+    from ph_variable_sharing import shared_variables
+    shared_variables.initialize()
 
     results_for_showing = passing_results_for_showing + failing_results_for_showing
 
@@ -174,74 +190,143 @@ def show_report(failing_results_for_showing: list, passing_results_for_showing: 
         for line in to_display_with_colors:
             print(line)
 
-        # Print the parts of the execution trace that are different, highlighting insertions green and removals red.
+        # Print the parts of the execution trace that are different, highlighting insertions green
+        # and removals red, unless the user requested not to print execution traces.
         # Omit linelogs that only differ in their pre-colon content.
         # Convert traces to newline-separated lists
-        print(f"{Fore.BLUE}{'~' * 16} Execution Path Changes {'~' * 16}{Style.RESET_ALL}")
-        original_execution_trace_list = original_execution_trace.split("\n")
-        result_execution_path_list = result.execution_path.split("\n")
-        # Remove all pre-colon content from linelog lines in both original_execution_trace_list and result_execution_path_list
-        for this_trace in [original_execution_trace_list, result_execution_path_list]:
-            for ll in range(len(this_trace)):
-                line = this_trace[ll]
-                if is_linelog(line):
-                    index_colon = line.index(": ")
-                    this_trace[ll] = line[index_colon+2:]
-        # Get diff
-        trace_diff = ndiff(original_execution_trace_list, result_execution_path_list)
-        changes = [element for element in trace_diff]
-        trace_changelog = changes.copy()  # For troubleshooting purposes, so that we can look at the initial state of changes
-        # Create empty list which we'll build into the trace
-        trace_with_colors = []
-        # Build trace_with_colors
-        for change in changes:
-            if change.startswith(" "):
-                trace_with_colors.append(change[1:])
-            elif change.startswith("+"):
-                trace_with_colors.append(Fore.GREEN + change[2:] + Style.RESET_ALL)
-            elif change.startswith("-"):
-                trace_with_colors.append(f"{Fore.RED} (Line removed: {change[2:]}){Style.RESET_ALL}")
-            elif change.startswith("?"):
-                pass    # We don't do anything for '?' lines because we treat all '+' and '-' lines like additions/removals of an entire line
-        # Convert trace_with_colors back into a string, cropping any lines that aren't near a change, and print it
-        trace_with_colors_as_string = ""
-        most_recent_ll_added = -1
-        for ll in range(len(trace_with_colors)):
-            line = trace_with_colors[ll]
-            # Get whether there's a colored line within 2 spaces away
-            lines_nearby = ""
-            try:
-                lines_nearby += trace_with_colors[ll-2]
-            except IndexError as err:
-                pass
-            try:
-                lines_nearby += trace_with_colors[ll-1]
-            except IndexError as err:
-                pass
-            try:
-                lines_nearby += trace_with_colors[ll]
-            except IndexError as err:
-                pass
-            try:
-                lines_nearby += trace_with_colors[ll+1]
-            except IndexError as err:
-                pass
-            try:
-                lines_nearby += trace_with_colors[ll+2]
-            except IndexError as err:
-                pass
-            colored_line_nearby = Style.RESET_ALL in lines_nearby
-            # If distance is small enough, append to trace_with_colors_as_string, as well as a newline.  Add a ' (...)'
-            # line if we skipped over anything.
-            if colored_line_nearby:
-                if most_recent_ll_added != ll - 1:
-                    trace_with_colors_as_string += " (...)\n"
-                trace_with_colors_as_string += line + "\n"
-                most_recent_ll_added = ll
-        # Add a final trailing ' (...)' if the last line added was not the last line of the trace
-        if most_recent_ll_added != len(trace_with_colors) - 1:
-            trace_with_colors_as_string += " (...)\n"
-        print(trace_with_colors_as_string)
+        if not shared_variables.execution_path_suppress:
+            print(f"{Fore.BLUE}{'~' * 16} Execution Path Changes {'~' * 16}{Style.RESET_ALL}")
+            original_execution_trace_list = original_execution_trace.split("\n")
+            result_execution_path_list = result.execution_path.split("\n")
+            # Remove all pre-colon content from linelog lines in both original_execution_trace_list and result_execution_path_list
+            for this_trace in [original_execution_trace_list, result_execution_path_list]:
+                for ll in range(len(this_trace)):
+                    line = this_trace[ll]
+                    if is_linelog(line):
+                        index_colon = line.index(": ")
+                        this_trace[ll] = line[index_colon+2:]
+            # Get diff
+            trace_diff = ndiff(original_execution_trace_list, result_execution_path_list)
+            changes = [element for element in trace_diff]
+            trace_changelog = changes.copy()  # For troubleshooting purposes, so that we can look at the initial state of changes
+            # Create empty list which we'll build into the trace
+            trace_with_colors = []
+            # Build trace_with_colors
+            for change in changes:
+                if change.startswith(" "):
+                    trace_with_colors.append(change[1:])
+                elif change.startswith("+"):
+                    trace_with_colors.append(Fore.GREEN + change[2:] + Style.RESET_ALL)
+                elif change.startswith("-"):
+                    trace_with_colors.append(f"{Fore.RED} (Line removed: {change[2:]}){Style.RESET_ALL}")
+                elif change.startswith("?"):
+                    pass    # We don't do anything for '?' lines because we treat all '+' and '-' lines like additions/removals of an entire line
+            # Convert trace_with_colors back into a string, cropping any lines that aren't near a change, and print it
+            trace_with_colors_as_string = ""
+            most_recent_ll_added = -1
+            for ll in range(len(trace_with_colors)):
+                line = trace_with_colors[ll]
+                # Get whether there's a colored line within 2 spaces away
+                lines_nearby = ""
+                try:
+                    lines_nearby += trace_with_colors[ll-2]
+                except IndexError as err:
+                    pass
+                try:
+                    lines_nearby += trace_with_colors[ll-1]
+                except IndexError as err:
+                    pass
+                try:
+                    lines_nearby += trace_with_colors[ll]
+                except IndexError as err:
+                    pass
+                try:
+                    lines_nearby += trace_with_colors[ll+1]
+                except IndexError as err:
+                    pass
+                try:
+                    lines_nearby += trace_with_colors[ll+2]
+                except IndexError as err:
+                    pass
+                colored_line_nearby = Style.RESET_ALL in lines_nearby
+                # If distance is small enough, append to trace_with_colors_as_string, as well as a newline.  Add a ' (...)'
+                # line if we skipped over anything.
+                if colored_line_nearby:
+                    if most_recent_ll_added != ll - 1:
+                        trace_with_colors_as_string += " (...)\n"
+                    trace_with_colors_as_string += line + "\n"
+                    most_recent_ll_added = ll
+            # Add a final trailing ' (...)' if the last line added was not the last line of the trace
+            if most_recent_ll_added != len(trace_with_colors) - 1:
+                trace_with_colors_as_string += " (...)\n"
+            print(trace_with_colors_as_string)
+        else:
+            print()     # Add a newline
+
+
+def distance_between_neuron_activations(activations_new: dict, activations_old: dict, mode="cosine") -> float:
+    """Given two sets of neuron activations, return a value representing the distance between them.
+    Neuron activations must be represented as a dict with each layer's name being a key and that layer's
+    activations being the value corresponding to that key.
+    Only the final layer (ie the embedding layer) counts toward distance.
+    :param activations_new: new neural net activations
+    :param activations_old: old neural net activations
+    :param mode:            which approach to use for calculating distances.  "cosine" mode returns a value that is 0 if the vectors are parallel, 0.5 if they're orthogonal, and 1 if they're antiparallel.
+    """
+    # Handle errors
+    # activations not dicts
+    if not isinstance(activations_new, dict) or not isinstance(activations_old, dict):
+        raise TypeError("activations must be dicts")
+    # activations don't have the same set of keys
+    if set(key for key in activations_new) != set(key for key in activations_old):
+        raise ValueError("activations must have the same set of keys")
+    # an activation contains a non-tensor value
+    for these_activations in (activations_new, activations_old):
+        for key in these_activations:
+            if not isinstance(these_activations[key], type(torch.tensor(0))):
+                raise TypeError("all activations must be tensors")
+    # activations have different-sized tensors attached to the same key
+    for key in activations_new:
+        if activations_new[key].shape != activations_old[key].shape:
+            raise ValueError("for any given key in activations_new and activations_old, the tensors stored with that key must have the same shape")
+    # mode not a string
+    if not isinstance(mode, str):
+        raise TypeError("mode must be a string")
+
+    # Get embedding layer activations as vectors
+    activations_new_list = [torch.reshape(activations_new[key], (-1,)) for key in activations_new]
+    activations_old_list = [torch.reshape(activations_old[key], (-1,)) for key in activations_old]
+    activations_new_vector = activations_new_list[-2]
+    activations_old_vector = activations_old_list[-2]
+
+    if mode == "cosine":
+        # Obtain the cosine similarity between the two vectors
+        cosine_similarity_finder = torch.nn.CosineSimilarity(dim=0)
+        similarity = cosine_similarity_finder(activations_new_vector, activations_old_vector)
+        if similarity.size() != torch.Size([]):
+            raise RuntimeError("unexpectedly got non-scalar similarity")
+        similarity = similarity.item()
+
+        # Obtain a distance that increases the more different the vectors are.
+        dist = (1 - similarity) / 2
+        return dist
+
+    elif mode == "euclidean":
+        # Return the euclidean distance between the two vectors
+        dist = torch.pow(torch.sum(torch.pow(activations_new_vector - activations_old_vector, 2)), 0.5)
+        if dist.size() != torch.Size([]):
+            raise RuntimeError("unexpectedly got non-scalar distance")
+        return dist.item()
+
+    elif mode == "rmse":
+        # Return the distance using RMSE
+        rmse = torch.sqrt(torch.mean((activations_new_vector - activations_old_vector)**2))
+        if rmse.size() != torch.Size([]):
+            raise RuntimeError("unexpectedly got non-scalar RMSE")
+        return rmse.item()
+
+    else:
+        raise ValueError("invalid mode requested")
 
 
 def distance_between_execution_traces(trace_new: str, trace_old: str) -> int:
@@ -295,11 +380,12 @@ def distance_between_execution_traces(trace_new: str, trace_old: str) -> int:
     return distance
 
 
-def filter_for_minimally_different_passing_and_failing_tests(results: list, original_execution_trace: str) -> list:
-    """Given a list of FuzzedUnitTestResult objects, return a list with just the 3 passing and 3 failing tests that have
-    minimally different execution traces from the original test's execution trace.
+def filter_for_minimally_different_passing_and_failing_tests(results: list, original_execution_trace=None, original_activations=None) -> list:
+    """Given a list of FuzzedUnitTestResult objects, return a list with just the 3 passing and 3 failing tests are
+    minimally different from the original.
     :param results:                     list of FuzzedUnitTestResult objects to be filtered
-    :param original_execution_trace:    execution trace from original test, in string form
+    :param original_execution_trace:    execution trace from original test, in string form.  If py-holmes is in dl mode, this must be None instead
+    :param original_activations:        dictionary of activations as tensors.  If py-holmes is NOT in dl mode, this must be None instead
     :return:                            list of two sublists, where the first sublist is the FuzzedUnitTestResult objects for the 3 most similar failing tests, and the second sublist is the FuzzedUnitTestResult objects for the 3 most similar passing tests
     """
     # Handle errors
@@ -313,9 +399,24 @@ def filter_for_minimally_different_passing_and_failing_tests(results: list, orig
     # results empty
     if len(results) == 0:
         raise ValueError("results must not be empty")
-    # original_execution_trace not a string
-    if not isinstance(original_execution_trace, str):
-        raise TypeError("original_execution_trace must be a string")
+    # original_execution_trace not a string or None
+    if not isinstance(original_execution_trace, str) and original_execution_trace is not None:
+        raise TypeError("original_execution_trace must be a string or None")
+    # original_activations not a dict or None
+    if not isinstance(original_activations, dict) and original_activations is not None:
+        raise TypeError("original_activations must be a dict or None")
+    # both or neither original test data are None
+    if not ((original_execution_trace is None) ^ (original_activations is None)):
+        raise ValueError("exactly one of original_execution_trace or original_activations must be None")
+    # inappropriate original test data given for mode (dl or not)
+    from ph_variable_sharing import shared_variables
+    shared_variables.initialize()
+    try:
+        dl = shared_variables.dl
+    except AttributeError as err:
+        dl = False
+    if dl ^ (original_activations is not None):
+        raise ValueError("the wrong original data was given for the dl flag.  For example, original_activations was given when the dl flag was off, or original_execution_trace was given when the dl flag was on")
 
     # Divide results into failing and passing
     failing_results = []
@@ -326,12 +427,14 @@ def filter_for_minimally_different_passing_and_failing_tests(results: list, orig
         else:
             passing_results.append(result)
 
-    # Remove all tests from each category except for the 3 in that category with the least distant trace from the
-    # original trace
+    # Remove all tests from each category except for the 3 in that category with the least distance
     if len(failing_results) <= 3:
         filtered_failing = failing_results
     else:
-        distances_failing = [distance_between_execution_traces(element.execution_path, original_execution_trace) for element in failing_results]  # Beware: The 3 smallest distances will later be set to +inf
+        if dl:
+            distances_failing = [distance_between_neuron_activations(element.activations, original_activations) for element in failing_results]  # Beware: The 3 smallest distances will later be set to +inf
+        else:
+            distances_failing = [distance_between_execution_traces(element.execution_path, original_execution_trace) for element in failing_results]  # Beware: The 3 smallest distances will later be set to +inf
         failing_least_distant_indices = []
         for ii in range(3):
             failing_least_distant_index = distances_failing.index(min(distances_failing))
@@ -341,7 +444,10 @@ def filter_for_minimally_different_passing_and_failing_tests(results: list, orig
     if len(passing_results) <= 3:
         filtered_passing = passing_results
     else:
-        distances_passing = [distance_between_execution_traces(element.execution_path, original_execution_trace) for element in passing_results]    # Beware: The 3 smallest distances will later be set to +inf
+        if dl:
+            distances_passing = [distance_between_neuron_activations(element.activations, original_activations) for element in passing_results]    # Beware: The 3 smallest distances will later be set to +inf
+        else:
+            distances_passing = [distance_between_execution_traces(element.execution_path, original_execution_trace) for element in passing_results]    # Beware: The 3 smallest distances will later be set to +inf
         passing_least_distant_indices = []
         for ii in range(3):
             passing_least_distant_index = distances_passing.index(min(distances_passing))
@@ -355,7 +461,7 @@ def filter_for_minimally_different_passing_and_failing_tests(results: list, orig
 
 def build_and_run_fuzzed_test_suite() -> None:
     """To be traced by the python trace module, called by get_variant_test_result().
-    Build a test suite, run, and return test results by creating a .json file.
+    Build a test suite containing a fuzzed variant, run, and return test results by creating a .pickle file.
     """
     # Get inputs via globaling, to get around NameError: name 'foo' is not defined
     global test_case_as_string
@@ -367,7 +473,7 @@ def build_and_run_fuzzed_test_suite() -> None:
     line_number_as_int = int(line_number)
     from ph_variable_sharing import shared_variables
     shared_variables.initialize()
-    json_filename = shared_variables.json_filename
+    pickle_filename = shared_variables.pickle_filename
     ROOT_DIR = shared_variables.ROOT_DIR
 
     # Change to the working directory of the test file, and remember the previous directory for changing back
@@ -404,35 +510,32 @@ def build_and_run_fuzzed_test_suite() -> None:
 
     # If we encountered any errors (not just failures), warn the user
     if len(output_runner_result.errors) > 0:
-        warning_text = "The following tests were aborted due to the following error(s) (not just failure(s)):"
+        warning_text = "The following tests were interrupted due to the following error(s) (not just failure(s)):"
         for this_error in output_runner_result.errors:
             warning_text = warning_text + "\n" + str(this_error)
         warn(warning_text)
 
     # In a perfect world, we'd want to return output_runner_result.  But because build_and_run_fuzzed_test_suite() gets
     # called by tracer.run() in get_unit_test_result(), and tracer.run() returns None due to the way trace.py is
-    # designed, we instead have to write the important part(s) of the runner_result to a file.  I chose .json because it
-    # can be used as a dictionary, and because Python has a built-in .json parser.
+    # designed, we instead have to write the important part(s) of the runner_result to a file.
 
-    # Warn the user if there's already a file with the name json_filename
-    if os.path.exists(json_filename):
-        response = input(json_filename + " already exists in the uppermost project directory. py-holmes needs to overwrite this file. Continue? (Y/n): ")
+    # Warn the user if there's already a file with the name pickle_filename
+    if os.path.exists(pickle_filename):
+        response = input(pickle_filename + " already exists in the uppermost project directory. py-holmes needs to overwrite this file. Continue? (Y/n): ")
         if response in ["Y", "y"]:
-            print("Deleting " + json_filename)
-            os.remove(json_filename)
+            print("Deleting " + pickle_filename)
+            os.remove(pickle_filename)
         else:
-            print("Aborting")
+            print("Exiting")
             exit()
-    # Create the .json file with all info we need
-    with open(json_filename, "w", encoding="utf-8") as json_file:
+    # Create the .pickle file with all info we need
+    with open(pickle_filename, "wb") as pickle_file:
         # Create a dictionary of all relevant results
         len_failures = len(output_runner_result.failures)
         dictionary = {
             "length_of_failures_list": len_failures,
         }
-        # Convert this dictionary to json-formatted text, then write to the file.
-        json_string = json.dumps(dictionary, indent=4)
-        json_file.write(json_string)
+        pickle.dump(dictionary, pickle_file)
 
 
 def get_variant_test_result(test_method: TestMethod, dev_only_test_mode: bool) -> FuzzedUnitTestResult:
@@ -447,6 +550,11 @@ def get_variant_test_result(test_method: TestMethod, dev_only_test_mode: bool) -
     # dev_only_test_mode not a bool
     if not isinstance(dev_only_test_mode, bool):
         raise TypeError("dev_only_test_mode must be a bool")
+    # We're in dl mode
+    from ph_variable_sharing import shared_variables
+    shared_variables.initialize()
+    if shared_variables.dl:
+        raise RuntimeError("this function should not be run while in dl mode.  Use run_variants_and_show_results() instead")
 
     # Global some variables for later use by build_and_run_fuzzed_test_suite()
     global test_case_as_string
@@ -455,9 +563,7 @@ def get_variant_test_result(test_method: TestMethod, dev_only_test_mode: bool) -
     global line_number
     global importstring
     global test_filepath_temp_from_rootdir
-    from ph_variable_sharing import shared_variables
-    shared_variables.initialize()
-    json_filename = shared_variables.json_filename
+    pickle_filename = shared_variables.pickle_filename
     line_number = test_method.starting_test_lineno
     test_filepath_temp = test_method.test_filepath
 
@@ -507,22 +613,18 @@ def get_variant_test_result(test_method: TestMethod, dev_only_test_mode: bool) -
 
     # Run test and get results, simultaneously tracing execution.
     # Getting tracer results involves redirecting stdout to a buffer and capturing it later as a variable.
-    # Getting unittest runner results requires reading the important results from a json
+    # Getting unittest runner results requires reading the important results from a pickle
     # that build_and_run_fuzzed_test_suite() writes
     tracer = trace.Trace(count=0, trace=1, countfuncs=0, countcallers=0, ignoremods=(), ignoredirs=(), infile=None, outfile=None, timing=False)
     trace_buffer = io.StringIO()
     try:
         with redirect_stdout(trace_buffer):   # To prevent the execution trace from getting printed to the screen
             tracer.run("build_and_run_fuzzed_test_suite()")   # Unit test result.  Running this line leads to warning about using PyDev debugger with sys.settrace()
-        json_file = open(json_filename, "r", encoding="utf-8")
-        json_string = json_file.read()
-        runner_result = json.loads(json_string)
+        with open(pickle_filename, "rb") as pickle_file:
+            runner_result = pickle.load(pickle_file)
     finally:
-        # Close the json file if we ever opened it
-        if "json_file" in locals():
-            json_file.close()
-        # Delete the json file; we have no more use for it
-        os.remove(json_filename)
+        # Delete the pickle file; we have no more use for it
+        os.remove(pickle_filename)
 
     # Get whether test failed (ie whether any asserts failed in this test-case method)
     test_failed = (runner_result["length_of_failures_list"] != 0)
@@ -610,23 +712,6 @@ def run_variants_and_show_results(original_test_result: OriginalUnitTestResult, 
     # original_test_method not a TestMethod object
     if not isinstance(original_test_method, TestMethod):
         raise TypeError("original_test_method must be a TestMethod object")
-    # fuzzed_from_original not a list
-    if not isinstance(fuzzed_from_original, list):
-        raise TypeError("fuzzed_from_original must be a list")
-    # fuzzed_from_original contains non-TestMethod element
-    for element in fuzzed_from_original:
-        if not isinstance(element, TestMethod):
-            raise TypeError("fuzzed_from_original contains non-TestMethod element")
-    # fuzzed_from_found not a list
-    if not isinstance(fuzzed_from_found, list):
-        raise TypeError("fuzzed_from_found must be a list")
-    # fuzzed_from_found contains non-TestMethod element
-    for element in fuzzed_from_found:
-        if not isinstance(element, TestMethod):
-            raise TypeError("fuzzed_from_found contains non-TestMethod element")
-    # both fuzzed lists have length 0
-    if len(fuzzed_from_original) == 0 and len(fuzzed_from_found) == 0:
-        raise ValueError("fuzzed_from_original and fuzzed_from_found are both empty.  No tests to run.")
     # dev_only_test_mode not a bool
     if not isinstance(dev_only_test_mode, bool):
         raise TypeError("dev_only_test_mode must be a bool")
@@ -635,6 +720,39 @@ def run_variants_and_show_results(original_test_result: OriginalUnitTestResult, 
     from ph_variable_sharing import shared_variables
     shared_variables.initialize()
     time_limit_seconds = shared_variables.variant_testing_time_limit_seconds
+
+    # Get whether running in dl mode
+    dl = shared_variables.dl
+
+    # If not in dl mode, handle additional errors
+    if not dl:
+        if (fuzzed_from_original is None or fuzzed_from_found is None):
+            raise TypeError("fuzzed_from_original and fuzzed_from_found may only be None if running in dl mode")
+        # fuzzed_from_original not a list
+        if not isinstance(fuzzed_from_original, list):
+            raise TypeError("fuzzed_from_original must be a list")
+        # fuzzed_from_original contains non-TestMethod element
+        for element in fuzzed_from_original:
+            if not isinstance(element, TestMethod):
+                raise TypeError("fuzzed_from_original contains non-TestMethod element")
+        # fuzzed_from_found not a list
+        if not isinstance(fuzzed_from_found, list):
+            raise TypeError("fuzzed_from_found must be a list")
+        # fuzzed_from_found contains non-TestMethod element
+        for element in fuzzed_from_found:
+            if not isinstance(element, TestMethod):
+                raise TypeError("fuzzed_from_found contains non-TestMethod element")
+        # both fuzzed lists have length 0
+        if len(fuzzed_from_original) == 0 and len(fuzzed_from_found) == 0:
+            raise ValueError("fuzzed_from_original and fuzzed_from_found are both empty.  No tests to run.")
+
+    # If in dl mode, just run the file we generated.
+    if dl:
+        test_case_as_string = original_test_method.test_name
+        class_as_string = original_test_method.test_class
+        test_filename_without_file_extension = "test_outputs_fuzzed"
+        os.system(f"python -m unittest {test_filename_without_file_extension}.{class_as_string}.{test_case_as_string}")
+        return
 
     # Create a list of fuzzed tests to run and remove any tests with duplicate body content from it
     fuzzed_combined = fuzzed_from_original + fuzzed_from_found
@@ -648,11 +766,18 @@ def run_variants_and_show_results(original_test_result: OriginalUnitTestResult, 
 
     # Run as many fuzzed tests as possible until we reach a time limit.  Prioritize running variants of the original
     # test, rather than running variants of the found test
+    # TODO: Currently the user-set time limit doesn't apply for dl tests.  This might be okay, since the duration of dl tests is much more predictable.
     test_results = run_fuzzed_tests_until_time_limit(fuzzed_to_run, dev_only_test_mode, time_limit_seconds)
 
     # Filter for up to 3 passing and 3 failing tests that have minimally different execution traces
-    failing_results_to_show, passing_results_to_show = filter_for_minimally_different_passing_and_failing_tests(test_results, original_test_result.execution_path)
+    if dl:
+        failing_results_to_show, passing_results_to_show = filter_for_minimally_different_passing_and_failing_tests(test_results, original_activations=original_test_result.activations)
+    else:
+        failing_results_to_show, passing_results_to_show = filter_for_minimally_different_passing_and_failing_tests(test_results, original_execution_trace=original_test_result.execution_path)
 
     # Show a report in which the differences in literals are highlighted, and execution traces are cropped so that only
     # the parts that differ remain
-    show_report(failing_results_to_show, passing_results_to_show, original_test_result.execution_path, original_test_method)
+    if dl:
+        show_report(failing_results_to_show, passing_results_to_show, original_test_method, original_activations=original_test_result.activations)
+    else:
+        show_report(failing_results_to_show, passing_results_to_show, original_test_method, original_execution_trace=original_test_result.execution_path)

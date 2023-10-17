@@ -1,0 +1,81 @@
+ --- modulename: test_circle_method, funcname: test_types
+test_circle_method.py(26):         self.assertRaises(TypeError, circle_area, 2+5j)
+ --- modulename: case, funcname: assertRaises
+case.py(814):         context = _AssertRaisesContext(expected_exception, self)
+ --- modulename: case, funcname: __init__
+case.py(169):         _BaseTestCaseContext.__init__(self, test_case)
+ --- modulename: case, funcname: __init__
+case.py(160):         self.test_case = test_case
+case.py(170):         self.expected = expected
+case.py(171):         self.test_case = test_case
+case.py(172):         if expected_regex is not None:
+case.py(174):         self.expected_regex = expected_regex
+case.py(175):         self.obj_name = None
+case.py(176):         self.msg = None
+ ||| exiting modulename: case, funcname: __init__
+ ||| exiting modulename: case, funcname: __init__
+case.py(815):         try:
+case.py(816):             return context.handle('assertRaises', args, kwargs)
+ --- modulename: case, funcname: handle
+case.py(185):         try:
+case.py(186):             if not _is_subtype(self.expected, self._base_type):
+ --- modulename: case, funcname: _is_subtype
+case.py(153):     if isinstance(expected, tuple):
+case.py(155):     return isinstance(expected, type) and issubclass(expected, basetype)
+ ||| exiting modulename: case, funcname: _is_subtype
+case.py(189):             if not args:
+case.py(196):             callable_obj, *args = args
+case.py(197):             try:
+case.py(198):                 self.obj_name = callable_obj.__name__
+case.py(201):             with self:
+ --- modulename: case, funcname: __enter__
+case.py(215):         return self
+ ||| exiting modulename: case, funcname: __enter__
+case.py(202):                 callable_obj(*args, **kwargs)
+ --- modulename: circle_method, funcname: circle_area
+circle_method.py(14):     return pi * r ** 2
+ --- modulename: case, funcname: __exit__
+case.py(218):         if exc_type is None:
+case.py(219):             try:
+case.py(220):                 exc_name = self.expected.__name__
+case.py(223):             if self.obj_name:
+case.py(224):                 self._raiseFailure("{} not raised by {}".format(exc_name,
+case.py(225):                                                                 self.obj_name))
+case.py(224):                 self._raiseFailure("{} not raised by {}".format(exc_name,
+ --- modulename: case, funcname: _raiseFailure
+case.py(163):         msg = self.test_case._formatMessage(self.msg, standardMsg)
+ --- modulename: case, funcname: _formatMessage
+case.py(777):         if not self.longMessage:
+case.py(779):         if msg is None:
+case.py(780):             return standardMsg
+ ||| exiting modulename: case, funcname: _formatMessage
+case.py(164):         raise self.test_case.failureException(msg)
+ ||| exiting modulename: case, funcname: _raiseFailure
+ ||| exiting modulename: case, funcname: __exit__
+ ||| exiting modulename: circle_method, funcname: circle_area
+case.py(205):             self = None
+ ||| exiting modulename: case, funcname: handle
+case.py(819):             context = None
+ --- modulename: contextlib, funcname: __exit__
+contextlib.py(118):         if type is None:
+contextlib.py(126):             if value is None:
+contextlib.py(130):             try:
+contextlib.py(131):                 self.gen.throw(type, value, traceback)
+ --- modulename: case, funcname: testPartExecutor
+case.py(61):         except KeyboardInterrupt:
+case.py(63):         except SkipTest as e:
+case.py(66):         except _ShouldStop:
+case.py(68):         except:
+case.py(69):             exc_info = sys.exc_info()
+case.py(70):             if self.expecting_failure:
+case.py(73):                 self.success = False
+case.py(74):                 self.errors.append((test_case, exc_info))
+case.py(77):             exc_info = None
+case.py(82):             self.success = self.success and old_success
+ ||| exiting modulename: case, funcname: testPartExecutor
+contextlib.py(132):             except StopIteration as exc:
+contextlib.py(136):                 return exc is not value
+contextlib.py(136):                 return exc is not value
+ ||| exiting modulename: contextlib, funcname: __exit__
+ ||| exiting modulename: case, funcname: assertRaises
+ ||| exiting modulename: test_circle_method, funcname: test_types

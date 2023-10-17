@@ -5,42 +5,8 @@ from fnmatch import fnmatch
 from os import path
 from Levenshtein import distance as lev
 
-
-def strip_custom(input_string: str, chars_to_remove, head_or_tail: str) -> str:
-    """Strip all characters from chars_to_remove from either the head or tail of input_string.
-    Stop when the first character not in chars_to_remove is encountered.
-    chars_to_remove is a list of strings where each string has length 1
-    """
-    # Handle errors
-    # input_string not a string
-    if not isinstance(input_string, str):
-        raise TypeError("input_string must be a string")
-    # chars_to_remove not a list
-    if not isinstance(chars_to_remove, list):
-        raise TypeError("chars_to_remove must be a list")
-    # Incorrect datatype in chars_to_remove
-    for entry in chars_to_remove:
-        if not isinstance(entry, str):
-            raise TypeError("All entries in chars_to_remove must be strings")
-    # Incorrect string length in chars_to_remove
-    for entry in chars_to_remove:
-        if len(entry) != 1:
-            raise ValueError("All strings in chars_to_remove must have length 1")
-    # head_or_tail does not equal "head" or "tail"
-    if head_or_tail not in ["head", "tail"]:
-        raise TypeError("head_or_tail must be either string 'head' or string 'tail'")
-
-    # Strip characters
-    if head_or_tail == "head":
-        removal_index = 0
-    else:   # head_or_tail must == "tail"
-        removal_index = -1
-    while len(input_string) > 0 and input_string[removal_index] in chars_to_remove:
-        if head_or_tail == "head":
-            input_string = input_string[1:]
-        else:   # head_or_tail must == "tail"
-            input_string = input_string[:-1]
-    return input_string
+from ph_variable_sharing import shared_variables
+from ph_basic_processing.stripping import strip_custom
 
 
 def strip_file_extension(input_string: str):
@@ -73,7 +39,7 @@ def leading_spaces_of(input_string: str) -> int:
     shared_variables.initialize()
     try:
         spaces_per_tab = shared_variables.tatosp
-    except AttributeError:   # TODO: Added this block for easier test running (so that we don't have to call py_holmes.py from the command line to set tatosp).  But it's messy.  Do something about this.
+    except AttributeError:   # TODO: I added this block for easier test running (so that we don't have to call py_holmes.py from the command line to set tatosp).  But it's messy.  Do something about this.
         spaces_per_tab = 4
     leading_spaces = 0
     for char in input_string:
@@ -943,3 +909,154 @@ def is_paren_balanced(s: str) -> bool:
             if paren_nest_count < 0:
                 return False
     return paren_nest_count == 0
+
+
+def insert_char_in_string_at_index(c, s, ind):
+    """Insert character c into string s at index ind."""
+    before_insertion = s[:ind]
+    after_insertion = s[ind:]
+    return before_insertion + c + after_insertion
+
+
+def remove_char_from_string_at_index(s, ind):
+    """Remove the character at index ind in s."""
+    before_char = s[:ind]
+    after_char = s[ind+1:]
+    return before_char + after_char
+
+
+def replace_char_in_string_at_index(c, s, ind):
+    """Change the character at index ind in s to c."""
+    before_char = s[:ind]
+    after_char = s[ind+1:]
+    return before_char + c + after_char
+
+
+def get_indices_containing_function_body_and_indentation_of_definition(file_as_list: list, function_name: str) -> tuple:
+    """Given the content of a python file as a newline-separated list, and the name of a particular function, return
+    the indices where the function starts (inclusive) and ends (exclusive), excluding its definition line and docstring.
+    Also return the indentation level in spaces of the definition line.
+    """
+    # Handle errors
+    # file_as_list not a list
+    if not isinstance(file_as_list, list):
+        raise TypeError("file_as_list must be a list")
+    # file_as_list contains non-string element
+    for element in file_as_list:
+        if not isinstance(element, str):
+            raise TypeError("file_as_list contains non-string element")
+    # function_name not a string
+    if not isinstance(function_name, str):
+        raise TypeError("function_name must be a string")
+
+    # Get the index of the first occurrence of f"def function_name(" after removing newlines, and make note of its
+    # indentation level.
+    index_function_start = None
+    for ll, line in enumerate(file_as_list):
+        if strip_custom(line, [" ", "\t"], "head").startswith(f"def {function_name}("):
+            index_function_start = ll
+            indentation_function_start = count_indentation_in_spaces(line)
+            break
+    if index_function_start is None:
+        raise ValueError(f"couldn't find declaration of function {function_name} in file_as_list")
+
+    # Get the first line of the function that isn't a definition line or docstring
+    index_body_start = None
+    if not starts_with_one_of(strip_custom(file_as_list[index_function_start + 1], ["\t", " "], "head"), ["'''", '"""']):
+        index_body_start = index_function_start + 1
+    else:
+        for ll, line in enumerate(file_as_list):    # TODO: Make robust to commented-out docstrings
+            if ll <= index_function_start:
+                continue
+            if ll == index_function_start + 1 and (line.count("'''") == 2 or line.count('"""') == 2):
+                index_body_start = ll + 1
+                break
+            elif ll >= index_function_start + 2 and (line.cont("'''") == 1 or line.count('"""') == 2):
+                index_body_start = ll + 1
+                break
+    if index_body_start is None:
+        raise ValueError(f"couldn't find start of body after function declaration for function {function_name} in file_as_list")
+
+    # Get the index of the first line after the definition which is <= indented and isn't just whitespace
+    index_function_end = None
+    for ll, line in enumerate(file_as_list):
+        if ll <= index_function_start:
+            continue
+        if not is_just_whitespace(line) and count_indentation_in_spaces(line) <= indentation_function_start:
+            index_function_end = ll
+            break
+
+    # Return!
+    return (index_body_start, index_function_end, indentation_function_start)
+
+
+def count_indentation_in_spaces(s: str) -> int:
+    """Return the indentation level of s.  Tabs count for tatosp spaces."""
+    # Handle errors
+    # s not a string
+    if not isinstance(s, str):
+        raise TypeError("s must be a string")
+    # s contains \n
+    if "\n" in s:
+        raise ValueError("s must not contain \\n")
+    # s is just whitespace
+    if is_just_whitespace(s):
+        raise ValueError("s is just whitespace")
+
+    shared_variables.initialize()
+    tatosp = shared_variables.tatosp
+
+    indentation_counter = 0
+
+    for cc, char in enumerate(s):
+        if char == " ":
+            indentation_counter += 1
+        elif char == "\t":
+            indentation_counter += tatosp
+        else:
+            return indentation_counter
+
+
+def overwrite_list_with_list_at_index(source: list, destination: list, index_start: int, index_end=None) -> list:
+    """Examples:
+    overwrite_list_with_list_at_index([5], [0, 1, 2], 1) = [0, 5, 2]
+    overwrite_list_with_list_at_index([5], [0, 1, 2, 3, 4], 2, 4) = [0, 1, 5, 4]
+    """
+    # Handle errors
+    # source not a list
+    if not isinstance(source, list):
+        raise TypeError("source must be a list")
+    # source empty
+    if len(source) == 0:
+        raise ValueError("source must not be empty")
+    # destination not a list
+    if not isinstance(destination, list):
+        raise TypeError("destination must be a list")
+    # destination empty
+    if len(destination) == 0:
+        raise ValueError("destination must not be empty")
+    # index_start not an int
+    if not isinstance(index_start, int):
+        raise TypeError("index_start must be an int")
+    # index_start negative
+    if index_start < 0:
+        raise ValueError("index_start must not be negative")
+    # index_end not None or an int
+    if not (index_end is None) and not (isinstance(index_end, int)):
+        raise TypeError("index_end must be None or an int")
+    # index_end is int but negative
+    if isinstance(index_end, int) and index_end < 0:
+        raise ValueError("index_end must not be negative")
+
+    # Defensive copying
+    s = source.copy()
+    d = destination.copy()
+
+    # Run!
+    if index_end is None:
+        index_end = index_start + 1
+    out = d[:index_start]
+    out.extend(s)
+    out.extend(d[index_end:])
+
+    return out

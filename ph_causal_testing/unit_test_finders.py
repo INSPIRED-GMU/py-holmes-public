@@ -3,7 +3,8 @@
 
 from ph_causal_testing.class_for_test_method import TestMethod
 from ph_variable_sharing import shared_variables
-from ph_basic_processing.parsers import strip_file_extension, strip_custom, remove_trailing_comment, strip_trailing_newline
+from ph_basic_processing.parsers import remove_trailing_comment, strip_file_extension, strip_trailing_newline
+from ph_basic_processing.stripping import strip_custom
 
 from os import walk, path
 from sys import executable

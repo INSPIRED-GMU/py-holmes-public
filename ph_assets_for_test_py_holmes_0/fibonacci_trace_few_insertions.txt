@@ -1,0 +1,145 @@
+ --- modulename: benchmark_fibonacci, funcname: <module>
+benchmark_fibonacci.py(1): import sys
+benchmark_fibonacci.py(4): def powLF(n):
+benchmark_fibonacci.py(15): def fib(n):
+benchmark_fibonacci.py(22): print(fib(int(sys.argv[1])))
+ --- modulename: benchmark_fibonacci, funcname: fib
+benchmark_fibonacci.py(16):     if n & 1:
+benchmark_fibonacci.py(19):         L, F = powLF(n // 2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+--- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(7):     L, F = powLF(n//2)
+ --- modulename: benchmark_fibonacci, funcname: powLF
+benchmark_fibonacci.py(5):     if n == 1:
+benchmark_fibonacci.py(6):         return (1, 1)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(10):         return ((L + 5*F) >> 1, (L + F) >> 1)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(10):         return ((L + 5*F) >> 1, (L + F) >> 1)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(10):         return ((L + 5*F) >> 1, (L + F) >> 1)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(10):         return ((L + 5*F) >> 1, (L + F) >> 1)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(10):         return ((L + 5*F) >> 1, (L + F) >> 1)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(10):         return ((L + 5*F) >> 1, (L + F) >> 1)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(8):     L, F = (L**2 + 5*F**2) >> 1, L*F
+benchmark_fibonacci.py(9):     if n & 1:
+benchmark_fibonacci.py(12):         return (L, F)
+benchmark_fibonacci.py(20):         return L * F
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: powLF
+ ||| exiting modulename: benchmark_fibonacci, funcname: fib
+ ||| exiting modulename: benchmark_fibonacci, funcname: <module>

@@ -26,4 +26,4 @@ def get_python_path_for_platform() -> str:
         return f"/usr/lib/python{version_info[0]}.{version_info[1]}"    # eg /usr/lib/python3.8
 
     else:
-        raise RuntimeError("Unfamiliar operating system. Don't know the default install location for Python for this OS")
+        raise RuntimeError("Unfamiliar operating system. Don't know the default install location for Python for this OS.  Try using Linux, macOS, or Windows instead.")

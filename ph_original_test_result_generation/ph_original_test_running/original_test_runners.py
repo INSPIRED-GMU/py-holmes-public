@@ -4,13 +4,14 @@ from io import StringIO
 import unittest
 from warnings import warn
 import os
-import json
 import trace
 import io
 from contextlib import redirect_stdout
 from ast import parse
+import pickle
 
-from ph_basic_processing.parsers import *
+from ph_basic_processing.parsers import remove_leading_substring, get_folder_delimiter, get_indices_containing_function_body_and_indentation_of_definition, count_indentation_in_spaces, get_method_name_from_definition_line, leading_spaces_of, find_class_containing_method, get_call_from_traceback
+from ph_basic_processing.stripping import strip_custom
 from ph_original_test_result_generation.ph_original_test_running.importers import *
 from ph_basic_processing.trace_exit_line_adders import add_exit_lines_to_trace, remove_before_user_runtime, remove_after_user_runtime
 
@@ -21,16 +22,17 @@ from ph_basic_processing.trace_exit_line_adders import add_exit_lines_to_trace, 
 class OriginalUnitTestResult:
     """Container for those results of an original unit test that are relevant for causal testing."""
 
-    def __init__(self, input_args_tree, execution_path: str, failed: bool, traceback: str, trace_indices_descended_from_non_ignored_user_code, test_class_string: str, test_method_string: str, involved_user_and_py_holmes_modules) -> None:
+    def __init__(self, input_args_tree=None, execution_path=None, failed=None, traceback=None, trace_indices_descended_from_non_ignored_user_code=None, test_class_string=None, test_method_string=None, involved_user_and_py_holmes_modules=None, activations=None) -> None:
         """
         :param input_args_tree: Python ast containing arguments of BOTH the first assert failed in this test-case method AND the function tested within that assert
-        :param execution_path: Execution trace in string form.  ONLY INCLUDES THE LINES RUN DURING THE USER'S TEST'S RUNTIME; lines from before and after this have been cropped away
+        :param execution_path: String.  Execution trace in string form.  ONLY INCLUDES THE LINES RUN DURING THE USER'S TEST'S RUNTIME; lines from before and after this have been cropped away
         :param failed: Boolean.  True if one or more assert calls in the test failed, else False.
         :param traceback: String of traceback
         :param trace_indices_descended_from_non_ignored_user_code: List of ints.  Indices of lines of execution_path that are linelogs descended from user code not in .holmesignore
-        :param test_class_string: The type of the class containing the test.  For example, "<class 'circle_method_test.TestCircleArea'>"
+        :param test_class_string: String.  The type of the class containing the test.  For example, "<class 'circle_method_test.TestCircleArea'>"
         :param test_method_string: The name of the test method, without parentheses.  For example: "test_values"
         :param involved_user_and_py_holmes_modules: A list of user and py-holmes module names (without a file extension) used in the entire (pre-cropping) trace.  Holmesignored modules are not excluded from this list.
+        :param activations: Only for use when py-holmes is being used with the --dl flag.  Dictionary of tensors representing the activation of each layer.
         """
         self.input_args_tree = input_args_tree
         self.execution_path = execution_path
@@ -40,14 +42,153 @@ class OriginalUnitTestResult:
         self.test_class_string = test_class_string
         self.test_method_string = test_method_string
         self.involved_user_and_py_holmes_modules = involved_user_and_py_holmes_modules
+        self.activations = activations
 
 
 #
 # HELPER FUNCTIONS
 #
+def build_and_run_test_suite_dl() -> dict:
+    """Build a test suite containing the original test, run, and return neuron activations."""
+    # Get inputs via globaling, to get around NameError: name 'foo' is not defined
+    from ph_variable_sharing import shared_variables
+    shared_variables.initialize()
+    pickle_filename = shared_variables.pickle_filename
+    file_absolute = shared_variables.file_absolute
+    ROOT_DIR = shared_variables.ROOT_DIR
+    tatosp = shared_variables.tatosp
+    dev_only_test_mode = shared_variables.dev_only_test_mode
+
+    # Change to the working directory of the test file, and remember the previous directory for changing back
+    if os.path.dirname(file_absolute) != ROOT_DIR:
+        old_working_directory = os.getcwd()
+        os.chdir(ROOT_DIR)  # Step up to the top of the project so that we can avoid having to step upward to reach the file
+        folder_change = remove_leading_substring(ROOT_DIR, file_absolute)
+        folder_delimiter = get_folder_delimiter(folder_change)
+        folder_change = concatenate_list_to_string(folder_change.split(folder_delimiter)[:-1], between=folder_delimiter)    # Remove file from end, so that folder_change is a string of only directories
+        if folder_change.startswith(folder_delimiter):
+            folder_change = folder_change[1:]
+        if folder_change.endswith(folder_delimiter):
+            folder_change = folder_change[:-1]
+        os.chdir(folder_change)     # Step down to the folder containing the test file
+
+    # Without modifying the user-written test file, create a new test that matches the original, except inject the
+    # creation of a pickle file to hold neuron activations
+    # Get original file content as string
+    with open(file_absolute, "r", encoding="utf-8") as file:
+        file_content = file.read().split("\n")
+    # Get the part of the file that is our function specifically
+    index_body_start, index_body_end, definition_indentation = get_indices_containing_function_body_and_indentation_of_definition(file_content, test_case_as_string)
+    body_indentation = definition_indentation + tatosp
+    function_body = file_content.copy()[index_body_start:index_body_end]
+    # Put test content in a try block
+    function_body.insert(0, f"{' '*body_indentation}try:")
+    for ll, line in enumerate(function_body):
+        if ll >= 1:
+            function_body[ll] = " "*tatosp + function_body[ll]
+    # Before try block, import pickle, add a variable to check whether the test failed, a dictionary to hold
+    # activations, and declare a function to get activations
+    function_body = [
+        " "*body_indentation + "import pickle",
+        " "*body_indentation + "ph_test_failed = False",
+        " "*body_indentation + "ph_activation = {}",
+        "",
+        " "*body_indentation + "def ph_get_activation(name):",
+        " "*body_indentation + " "*tatosp + "def hook(model, input, output):",
+        " "*body_indentation + " "*tatosp*2 + "ph_activation[name] = output.detach()",
+        " "*body_indentation + " "*tatosp + "return hook",
+        "",
+                    ] + function_body
+    # Just after model is instantiated, add a hook to each layer.  These hooks allow us to retrieve the activations of
+    # neurons in the model after it's fed an input.
+    model_instantiation_line = None
+    for ll, line in enumerate(function_body):
+        if "model = " in line:
+            model_instantiation_line = ll
+            model_instantiation_indentation = count_indentation_in_spaces(line)
+            break
+    if model_instantiation_line is None:
+        raise RuntimeError("could not find model instantiation in test method")
+    function_body.insert(model_instantiation_line+1, " "*model_instantiation_indentation + "for ph_modulename in model._modules:")
+    function_body.insert(model_instantiation_line+2, " "*model_instantiation_indentation + " "*tatosp + '''eval(f"model.{ph_modulename}.register_forward_hook(ph_get_activation('{ph_modulename}'))")''')
+    # Add an "except AssertionErr as err" block that sets the failed flag to true
+    function_body += [
+        " "*body_indentation + "except AssertionError as err:",
+        " "*body_indentation + " "*tatosp + "ph_test_failed = True",
+    ]
+    # Add a finally block that writes the pickle file and raises an AssertionError if the test failed.
+    function_body += [
+        " "*body_indentation + "finally:",
+        " "*body_indentation + " "*tatosp + '''with open("ph_activations.pickle", "wb") as pickle_file:''',
+        " "*body_indentation + " "*tatosp*2 + '''pickle.dump(ph_activation, pickle_file)''',
+        " "*body_indentation + " "*tatosp + '''if ph_test_failed:''',
+        " "*body_indentation + " "*tatosp*2 + '''raise AssertionError("test failed")''',
+    ]
+    # Replace the part of file_content that contains our function body with our new function body
+    if index_body_end is None:
+        file_content = file_content[:index_body_start] + function_body
+    else:
+        file_content = file_content[:index_body_start] + function_body + file_content[index_body_end:]
+    # Write to new file
+    with open("ph_test_hooked.py", "w", encoding="utf-8") as file:
+        for line in file_content:
+            file.write(line + "\n")
+
+    # If in dev-only test mode, print content of new file
+    if dev_only_test_mode:
+        print("HOOKED ORIGINAL TEST FILE CONTENT:\n" + concatenate_list_to_string(file_content, "\n"))
+
+    # Build a test suite which contains only this test method
+    test_class = import_by_string(importstring)
+    suite = unittest.TestSuite()
+    suite.addTest(test_class(test_case_as_string))
+
+    # Run test and get results
+    stream = StringIO()
+    runner = unittest.TextTestRunner(stream=stream)
+    output_runner_result = runner.run(suite)    # Unit test result
+    with open("ph_activations.pickle", "rb") as pickle_file:
+        activations = pickle.load(pickle_file)
+    os.remove("ph_activations.pickle")
+
+    # Revert to whatever directory we were in before this was called
+    if os.path.dirname(file_absolute) != ROOT_DIR:
+        os.chdir(old_working_directory)
+
+    # If we encountered any errors (not just failures), warn the user
+    if len(output_runner_result.errors) > 0:
+        warning_text = "The following tests were interrupted due to the following error(s) (not just failure(s)):"
+        for this_error in output_runner_result.errors:
+            warning_text = warning_text + "\n" + str(this_error)
+        warn(warning_text)
+
+    # Warn the user if there's already a file with the name pickle_filename
+    if os.path.exists(pickle_filename):
+        response = input(
+            pickle_filename + " already exists in the uppermost project directory. py-holmes needs to overwrite this file. Continue? (Y/n): ")
+        if response in ["Y", "y"]:
+            print("Deleting " + pickle_filename)
+            os.remove(pickle_filename)
+        else:
+            print("Exiting")
+            exit()
+    # Create the .pickle file with all info we need
+    with open(pickle_filename, "wb") as pickle_file:
+        # Create a dictionary of all relevant results
+        len_failures = len(output_runner_result.failures)
+        dictionary = {
+            "length_of_failures_list": len_failures,
+            "failed_test_traceback": output_runner_result.failures[0][1] if len_failures > 0 else None,
+            "test_class_string_version": str(test_class),
+            "test_case_string_version": test_case_as_string,
+            "activations": activations,
+        }
+        pickle.dump(dictionary, pickle_file)
+
+
 def build_and_run_test_suite() -> None:
     """To be traced by the python trace module, called by get_unit_test_result().
-    Build a test suite, run, and return test results by creating a .json file.
+    Build a test suite containing the original test, run, and return test results by creating a .pickle file.
     """
     # Get inputs via globaling, to get around NameError: name 'foo' is not defined
     global test_case_as_string
@@ -58,7 +199,7 @@ def build_and_run_test_suite() -> None:
     line_number_as_int = int(line_number)
     from ph_variable_sharing import shared_variables
     shared_variables.initialize()
-    json_filename = shared_variables.json_filename
+    pickle_filename = shared_variables.pickle_filename
     file_absolute = shared_variables.file_absolute
     ROOT_DIR = shared_variables.ROOT_DIR
 
@@ -91,27 +232,26 @@ def build_and_run_test_suite() -> None:
 
     # If we encountered any errors (not just failures), warn the user
     if len(output_runner_result.errors) > 0:
-        warning_text = "The following tests were aborted due to the following error(s) (not just failure(s)):"
+        warning_text = "The following tests were interrupted due to the following error(s) (not just failure(s)):"
         for this_error in output_runner_result.errors:
             warning_text = warning_text + "\n" + str(this_error)
         warn(warning_text)
 
     # In a perfect world, we'd want to return output_runner_result.  But because build_and_run_test_suite() gets called
     # by tracer.run() in get_unit_test_result(), and tracer.run() returns None due to the way trace.py is designed, we
-    # instead have to write the important part(s) of the runner_result to a file.  I chose .json because it can be used
-    # as a dictionary, and because Python has a built-in .json parser.
+    # instead have to write the important part(s) of the runner_result to a file.
 
-    # Warn the user if there's already a file with the name json_filename
-    if os.path.exists(json_filename):
-        response = input(json_filename + " already exists in the uppermost project directory. py-holmes needs to overwrite this file. Continue? (Y/n): ")
+    # Warn the user if there's already a file with the name pickle_filename
+    if os.path.exists(pickle_filename):
+        response = input(pickle_filename + " already exists in the uppermost project directory. py-holmes needs to overwrite this file. Continue? (Y/n): ")
         if response in ["Y", "y"]:
-            print("Deleting " + json_filename)
-            os.remove(json_filename)
+            print("Deleting " + pickle_filename)
+            os.remove(pickle_filename)
         else:
-            print("Aborting")
+            print("Exiting")
             exit()
-    # Create the .json file with all info we need
-    with open(json_filename, "w", encoding="utf-8") as json_file:
+    # Create the .pickle file with all info we need
+    with open(pickle_filename, "wb") as pickle_file:
         # Create a dictionary of all relevant results
         len_failures = len(output_runner_result.failures)
         dictionary = {
@@ -120,9 +260,7 @@ def build_and_run_test_suite() -> None:
             "test_class_string_version": str(test_class),
             "test_case_string_version": test_case_as_string
         }
-        # Convert this dictionary to json-formatted text, then write to the file.
-        json_string = json.dumps(dictionary, indent=4)
-        json_file.write(json_string)
+        pickle.dump(dictionary, pickle_file)
 
 
 def get_unit_test_result(test_filepath_temp: str, test_filename_temp: str, line_number_temp: int) -> OriginalUnitTestResult:
@@ -156,7 +294,7 @@ def get_unit_test_result(test_filepath_temp: str, test_filename_temp: str, line_
     global importstring
     from ph_variable_sharing import shared_variables
     shared_variables.initialize()
-    json_filename = shared_variables.json_filename
+    pickle_filename = shared_variables.pickle_filename
     line_number = line_number_temp
 
     # Create test_filename_with_file_extension and test_filename_without_file_extension
@@ -307,77 +445,126 @@ def get_unit_test_result(test_filepath_temp: str, test_filename_temp: str, line_
         before_class = test_filepath_temp.replace(folder_delimiter, ".")
         if before_class.endswith(".py"):
             before_class = before_class[:-3]
+        if shared_variables.dl:  # If running in dl mode, change the name of the containing file to ph_test_hooked because this is where the hooked version of the user-written test will be created.
+            before_class[-1] = "ph_test_hooked"
         importstring = f"from {before_class} import {class_as_string}"
     else:   # File IS in the top-level directory
-        importstring = f"from {test_filename_without_file_extension} import {class_as_string}"
+        if shared_variables.dl:  # If running in dl mode, change the name of the containing file to ph_test_hooked because this is where the hooked version of the user-written test will be created.
+            importstring = f"from ph_test_hooked import {class_as_string}"
+        else:
+            importstring = f"from {test_filename_without_file_extension} import {class_as_string}"
 
-    # Run test and get results, simultaneously tracing execution.
-    # Getting tracer results involves redirecting stdout to a buffer and capturing it later as a variable.
-    # Getting unittest runner results requires reading the important results from a json
-    # that build_and_run_test_suite() writes
-    tracer = trace.Trace(count=0, trace=1, countfuncs=0, countcallers=0, ignoremods=(), ignoredirs=(), infile=None, outfile=None, timing=False)
-    trace_buffer = io.StringIO()
-    try:
-        with redirect_stdout(trace_buffer):   # To prevent the execution trace from getting printed to the screen
-            tracer.run("build_and_run_test_suite()")   # Unit test result.  Running this line leads to warning about using PyDev debugger with sys.settrace()
-        json_file = open(json_filename, "r", encoding="utf-8")
-        json_string = json_file.read()
-        runner_result = json.loads(json_string)
-    finally:
-        # Close the json file if we ever opened it
-        if "json_file" in locals():
-            json_file.close()
-        # Delete the json file; we have no more use for it
-        os.remove(json_filename)
+    # Run the test and get either execution information or neuron activation information, depending on whether the user gave the --dl flag.
+    if shared_variables.dl:
+        # Run test and get neuron activation information
+        try:
+            build_and_run_test_suite_dl()
+            with open(pickle_filename, "rb") as pickle_file:
+                runner_result = pickle.load(pickle_file)
+        finally:
+            # Delete the pickle file; we have no more use for it
+            os.remove(pickle_filename)
 
-    # Get whether test failed (ie whether any asserts failed in this test-case method)
-    test_failed = (runner_result["length_of_failures_list"] != 0)
+        # Get whether test failed (ie whether any asserts failed in this test-case method)
+        test_failed = (runner_result["length_of_failures_list"] != 0)
 
-    # Get the execution trace, unless the test didn't fail and the user didn't request causal testing be performed anyway
-    still_run_causal_testing_on_passing_tests = shared_variables.still_run_causal_testing_on_passing_tests
-    if test_failed or still_run_causal_testing_on_passing_tests:
-        tracer_result = trace_buffer.getvalue()
-        tracer_result = remove_before_user_runtime(tracer_result)
-        tracer_result, non_ignored_user_code_indices, traced_user_and_py_holmes_modules = add_exit_lines_to_trace(tracer_result)  # Add exit lines to tracer_result for every time we exit a function or class, and do some other touch-ups as well
-        # Remove all but the user's runtime from the execution trace, and update non_ignored_user_code_indices accordingly
-        tracer_result, non_ignored_user_code_indices = remove_after_user_runtime(tracer_result, non_ignored_user_code_indices)
+        # Get the execution trace, unless the test didn't fail and the user didn't request causal testing be performed anyway
+        still_run_causal_testing_on_passing_tests = shared_variables.still_run_causal_testing_on_passing_tests
+        if test_failed or still_run_causal_testing_on_passing_tests:
+            activations = runner_result["activations"]
+        else:
+            activations = None
+
+        if test_failed:
+            # Get the traceback of the failing test
+            test_traceback = runner_result["failed_test_traceback"]
+
+            # Get the string of the assert call that failed
+            failed_assert_call = get_call_from_traceback(test_traceback)
+
+            # Get input arguments of BOTH the first assert failed in this test-case method AND the function tested within that assert
+            test_args_tree = parse(failed_assert_call)
+
+            # Get test class and case
+            test_class_string_version = runner_result["test_class_string_version"]
+            test_case_string_version = runner_result["test_case_string_version"]
+        else:
+            test_traceback = runner_result["failed_test_traceback"]
+            failed_assert_call = None
+            test_args_tree = None
+            test_class_string_version = runner_result["test_class_string_version"]
+            test_case_string_version = runner_result["test_case_string_version"]
+
+        # Return an OriginalUnitTestResult object with the information that we need for causal testing
+        return OriginalUnitTestResult(input_args_tree=test_args_tree,
+                                      failed=test_failed, traceback=test_traceback,
+                                      test_class_string=test_class_string_version,
+                                      test_method_string=test_case_string_version,
+                                      activations=activations)
     else:
-        tracer_result = None
-        non_ignored_user_code_indices = None
-        traced_user_and_py_holmes_modules = None
+        # Run test and get results, simultaneously tracing execution.
+        # Getting tracer results involves redirecting stdout to a buffer and capturing it later as a variable.
+        # Getting unittest runner results requires reading the important results from a pickle
+        # that build_and_run_test_suite() writes
+        tracer = trace.Trace(count=0, trace=1, countfuncs=0, countcallers=0, ignoremods=(), ignoredirs=(), infile=None, outfile=None, timing=False)
+        trace_buffer = io.StringIO()
+        try:
+            with redirect_stdout(trace_buffer):   # To prevent the execution trace from getting printed to the screen
+                tracer.run("build_and_run_test_suite()")   # Unit test result.  Running this line leads to warning about using PyDev debugger with sys.settrace()
+            with open(pickle_filename, "rb") as pickle_file:
+                runner_result = pickle.load(pickle_file)
+        finally:
+            # Delete the pickle file; we have no more use for it
+            os.remove(pickle_filename)
 
-    if test_failed:
-        # Get the traceback of the failing test
-        test_traceback = runner_result["failed_test_traceback"]
+        # Get whether test failed (ie whether any asserts failed in this test-case method)
+        test_failed = (runner_result["length_of_failures_list"] != 0)
 
-        # Get the string of the assert call that failed
-        failed_assert_call = get_call_from_traceback(test_traceback)
+        # Get the execution trace, unless the test didn't fail and the user didn't request causal testing be performed anyway
+        still_run_causal_testing_on_passing_tests = shared_variables.still_run_causal_testing_on_passing_tests
+        if test_failed or still_run_causal_testing_on_passing_tests:
+            tracer_result = trace_buffer.getvalue()
+            tracer_result = remove_before_user_runtime(tracer_result)
+            tracer_result, non_ignored_user_code_indices, traced_user_and_py_holmes_modules = add_exit_lines_to_trace(tracer_result)  # Add exit lines to tracer_result for every time we exit a function or class, and do some other touch-ups as well
+            # Remove all but the user's runtime from the execution trace, and update non_ignored_user_code_indices accordingly
+            tracer_result, non_ignored_user_code_indices = remove_after_user_runtime(tracer_result, non_ignored_user_code_indices)
+        else:
+            tracer_result = None
+            non_ignored_user_code_indices = None
+            traced_user_and_py_holmes_modules = None
 
-        # Get input arguments of BOTH the first assert failed in this test-case method AND the function tested within that assert
-        test_args_tree = parse(failed_assert_call)
+        if test_failed:
+            # Get the traceback of the failing test
+            test_traceback = runner_result["failed_test_traceback"]
 
-        # Get execution path of failing test
-        test_execution_path = tracer_result
+            # Get the string of the assert call that failed
+            failed_assert_call = get_call_from_traceback(test_traceback)
 
-        # Get indices of user-descended code
-        test_trace_indices_descended_from_non_ignored_user_code = non_ignored_user_code_indices
+            # Get input arguments of BOTH the first assert failed in this test-case method AND the function tested within that assert
+            test_args_tree = parse(failed_assert_call)
 
-        # Get test class and case
-        test_class_string_version = runner_result["test_class_string_version"]
-        test_case_string_version = runner_result["test_case_string_version"]
+            # Get execution path of failing test
+            test_execution_path = tracer_result
 
-        # Get list of user modules used in the test.  Holmesignored user files are not excluded from this list.
-        test_user_and_py_holmes_modules = traced_user_and_py_holmes_modules
+            # Get indices of user-descended code
+            test_trace_indices_descended_from_non_ignored_user_code = non_ignored_user_code_indices
 
-    else:
-        test_traceback = runner_result["failed_test_traceback"]
-        failed_assert_call = None
-        test_args_tree = None
-        test_execution_path = tracer_result
-        test_trace_indices_descended_from_non_ignored_user_code = non_ignored_user_code_indices
-        test_class_string_version = runner_result["test_class_string_version"]
-        test_case_string_version = runner_result["test_case_string_version"]
-        test_user_and_py_holmes_modules = traced_user_and_py_holmes_modules
+            # Get test class and case
+            test_class_string_version = runner_result["test_class_string_version"]
+            test_case_string_version = runner_result["test_case_string_version"]
 
-    # Return an OriginalUnitTestResult object with the information that we need for causal testing
-    return OriginalUnitTestResult(input_args_tree=test_args_tree, execution_path=test_execution_path, failed=test_failed, traceback=test_traceback, trace_indices_descended_from_non_ignored_user_code=test_trace_indices_descended_from_non_ignored_user_code, test_class_string=test_class_string_version, test_method_string=test_case_string_version, involved_user_and_py_holmes_modules=test_user_and_py_holmes_modules)
+            # Get list of user modules used in the test.  Holmesignored user files are not excluded from this list.
+            test_user_and_py_holmes_modules = traced_user_and_py_holmes_modules
+
+        else:
+            test_traceback = runner_result["failed_test_traceback"]
+            failed_assert_call = None
+            test_args_tree = None
+            test_execution_path = tracer_result
+            test_trace_indices_descended_from_non_ignored_user_code = non_ignored_user_code_indices
+            test_class_string_version = runner_result["test_class_string_version"]
+            test_case_string_version = runner_result["test_case_string_version"]
+            test_user_and_py_holmes_modules = traced_user_and_py_holmes_modules
+
+        # Return an OriginalUnitTestResult object with the information that we need for causal testing
+        return OriginalUnitTestResult(input_args_tree=test_args_tree, execution_path=test_execution_path, failed=test_failed, traceback=test_traceback, trace_indices_descended_from_non_ignored_user_code=test_trace_indices_descended_from_non_ignored_user_code, test_class_string=test_class_string_version, test_method_string=test_case_string_version, involved_user_and_py_holmes_modules=test_user_and_py_holmes_modules)

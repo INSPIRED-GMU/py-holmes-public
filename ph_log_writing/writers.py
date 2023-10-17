@@ -1,4 +1,5 @@
-"""Classes and functions for writing output streams to log files."""
+"""Classes and functions for redirecting output streams to log files."""
+
 
 import sys
 

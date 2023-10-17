@@ -1,0 +1,42 @@
+# PyCharm virtual environment and related
+.idea/
+venv/
+
+# Pycache (initially created by running execution trace benchmark generators)
+__pycache__/
+
+# log, json, etc files generated at runtime that might not be cleaned up
+created_by_py_holmes_unittest_relevant_results*.json
+created_by_py_holmes_unittest_relevant_results*.pickle
+log_from_most_recent_run.log
+py_holmes_built_to_fail.py
+test_outputs_fuzzed.py
+pylint_result.txt
+ph_benchmarks/ph_BugsInPy/TEMP/
+ph_benchmarks/ph_BugsInPy/PRESERVED_LOGS/
+ph_benchmarks/ph_BugsInPy/log*.log
+ph_benchmarks/ph_BugsInPy/LOGS.zip
+dummy_file.txt
+ph_assets_for_test_py_holmes_0/dummy_file.txt
+ph_test_hooked.py
+ph_activations.pickle
+test_one_failed_mnist_input.py
+
+# User-created files tailored for their specific project
+.holmesignore
+.holmessearchextend
+
+# hypothesis
+.hypothesis
+
+# Data folders created by PyTorch
+data/
+
+# Miscellaneous
+distance_calculation.xlsx
+~$distance_calculation.xlsx
+ph_benchmarks/ph_BugsInPy/log.log
+ph_benchmarks/ph_BugsInPy/BugsInPy/
+.pytest_cache/
+single_report.txt
+ph_traceback_dataset/stacktraces.json
