@@ -63,9 +63,11 @@ If instead you would like to install an environment manually, here are the requi
 
 # Usage and internal process
 ![Shallow flowchart](ph_readme_images/py-holmes-demo-paper-1-flowchart-1.png)
+
 Flowchart of py-holmes's internal process when used on a unit test of shallow software.
 
 ![Deep learning flowchart](ph_readme_images/flowchart-dl.jpg)
+
 Flowchart of py-holmes's internal process when used on a unit test of a deep neural network.
 
 Py-holmes's procedure is summarized in the figures above.  A user calls py-holmes using its command line interface.  An example of a typical call is `python py_holmes.py -f tests/my_test.py -l 20 25`.  This command would run py-holmes on two tests contained within the file `tests/my_test.py`: one on line 20, and another on line 25.
