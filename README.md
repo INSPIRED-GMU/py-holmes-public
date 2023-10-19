@@ -1,5 +1,5 @@
 # py-holmes
-Adaptation of the causal testing tool [Holmes](https://cs.gmu.edu/~johnsonb/docs/Johnson20icse.pdf) for Python unit testing, and extends it for use in testing deep neural networks (DNNs).  Submitted as an artifact along with our paper *Py-holmes: Causal Testing for Deep Neural Networks in Python*.  You can also take a look at our [demo video](https://youtu.be/wFAVWMWrbLo).
+Adaptation of the causal testing tool [Holmes](https://cs.gmu.edu/~johnsonb/docs/Johnson20icse.pdf) for Python unit testing, and extends it for use in testing deep neural networks (DNNs).  Submitted as an artifact along with our paper *Py-holmes: Causal Testing for Deep Neural Networks in Python*.  You can also take a look at our [demo video](https://go.gmu.edu/pyholmes_demo_2024).
 
 It is not possible to run multiple runtimes of py-holmes in parallel, because of the way it writes and reads temporary files.
 
