@@ -47,18 +47,19 @@ folder.  Begin a lines in .holmessearchextend with /
 to create an absolute filepath.
 
 ## Dependencies
-As a shortcut to dependency installation, you can use our `environment_droplet.yml` file to automatically set up an environment.  Simply enter Anaconda prompt with the `base` environment active, navigate to this folder, and run `conda env create -f environment_droplet.yml`.  This will create a new conda environment called `phdl38`, which you can use to run py-holmes in all its modes and features.
-
-If instead you would like to install an environment manually, here are the required packages:
-* hypothesis
-* black
-* pytest
-* astor
-* python-Levenshtein
-* pylint
-* colorama
-* torch
-* numpy
+Use one of the following three ***Options*** to set up a conda environment with the required Python packages for this project.  We name ours `phdl38`, but you can name yours whatever you like.  Option 1 is typically the fastest, followed by 2, followed by 3.
+- ***Option 1: Using a tar.gz file made with conda-pack***: Download `phdl38.tar.gz` from [this link](https://drive.google.com/file/d/1rp4gbez4MI4UlUsz4hkRK0GPE97j5Ld9/view?usp=sharing), then extract it to a folder.  Rename that folder to `phdl38`, then move that folder to your Anaconda environments folder (`anaconda3/envs/` by default).  Then run `conda activate phdl38` in Anaconda prompt.
+- ***Option 2: Using an environment droplet***: In Anaconda prompt, with the `base` environment active, navigate to the same folder where you found this readme.  Then run `conda env create -f environment_droplet.yml`.  This will create a new conda environment called `phdl38`.  Then run `conda activate phdl38` in Anaconda prompt.
+- ***Option 3: Manual installation***: Create a new conda environment called `phdl38` with Python 3.8, then manually install the following packages into that environment:
+  - hypothesis
+  - black
+  - pytest
+  - astor
+  - python-Levenshtein
+  - pylint
+  - colorama
+  - torch
+  - numpy
 
 
 # Usage and internal process
