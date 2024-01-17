@@ -180,7 +180,7 @@ class TestDnn0WithHandmadeInput(unittest.TestCase):
                            12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]], dtype=torch.float32)
         output = model(x)
         label = torch.Tensor([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
-        self.assertTrue((label == output).all())
+        self.assertTrue(label.argmax().item() == output.argmax().item())
 ```
 
 # Purpose of each folder
