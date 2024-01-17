@@ -1,5 +1,5 @@
 # py-holmes
-Adaptation of the causal testing tool [Holmes](https://cs.gmu.edu/~johnsonb/docs/Johnson20icse.pdf) for Python unit testing, and extends it for use in testing deep neural networks (DNNs).  Submitted as an artifact along with our paper *Py-holmes: Causal Testing for Deep Neural Networks in Python*.  You can also take a look at our [demo video](https://go.gmu.edu/pyholmes_demo_2024).
+Adaptation of the causal testing tool [Holmes](https://cs.gmu.edu/~johnsonb/docs/Johnson20icse.pdf) for Python unit testing, and extends it for use in testing deep neural networks (DNNs).  You can also take a look at our [demo video](https://go.gmu.edu/pyholmes_demo_2024).
 
 It is not possible to run multiple runtimes of py-holmes in parallel, because of the way it writes and reads temporary files.
 
@@ -24,6 +24,8 @@ If you are using the shallow version of py-holmes, your project must adhere to c
 7. Your project should not contain any files with the following names: `test_outputs_fuzzed.py`, `pylint_result.py`, `ph_test_hooked.py`, `ph_activations,pickle`.
 
 The current version of py-holmes is designed for use with the `unittest` module exclusively, and is therefore not compatible with `pytest`, another popular unit testing framework for Python.  It also is not completely autonomous; when run on certain tests without the `--dl` flag, it may rely on a user to point out which argument is an oracle in certain calls to class 2 assert methods.  If this is not desired, py-holmes can be run with the `--user_help_skip` flag.
+
+Py-holmes' `--dl` mode currently has a limitation in how it distinguishes between passing and failing test inputs.  Regardless of the assert method in the user-writtne test, py-holmes in `--dl` mode uses a passing criteria of `assert output.argmax().item() == label.argmax().item()`.
 
 The fuzzing process without the `--dl` flag also contains limitations.  Py-holmes cannot fuzz a test that has no literals.  Furthermore, its process of protecting oracle literals from being fuzzed is incomplete.  If the test contains mutator functions which change the value of an oracle variable without using an `=` operator, then all literal arguments of those mutator functions could play a role in defining the oracle, yet py-holmes will not notice to protect those literals from fuzzing.
 
